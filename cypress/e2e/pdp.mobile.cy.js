@@ -75,11 +75,15 @@ ALL_DEVICES.forEach(({ name, width, height, touchTarget }) => {
       cy.get(header).filter(':visible').should('have.length.at.least', 1);
     });
 
-    // Some themes hide the breadcrumb trail on mobile (BESTCA: nav.Breadcrumb is display:none
+    // Some themes hide the breadcrumb trail on phones (BESTCA: nav.Breadcrumb is display:none
     // below desktop widths) — gate the visibility assertion behind pdp.mobileBreadcrumbsHidden.
-    itIfStore(!(site.pdp && site.pdp.mobileBreadcrumbsHidden), 'renders breadcrumbs with Home and at least one category link', () => {
+    // The flag covers PHONES only: on all five stores that set it (AAP, ADC, BESTCA, BRH, FSE)
+    // the trail is 0x0 at 360/393/412px but renders at the 810px tablet (verified live
+    // Sept 29 2026), so the tablet keeps the assertion rather than inheriting the phone skip.
+    const breadcrumbsHidden = !!(site.pdp && site.pdp.mobileBreadcrumbsHidden) && PHONES.some((p) => p.name === name);
+    itIfStore(!breadcrumbsHidden, 'renders breadcrumbs with Home and at least one category link', () => {
       assertBreadcrumbs();
-    }, "store theme hides breadcrumbs on mobile (pdp.mobileBreadcrumbsHidden)");
+    }, "store theme hides breadcrumbs on phones (pdp.mobileBreadcrumbsHidden)");
 
     it('shows a non-empty product title', () => {
       cy.get(sel.title).invoke('text').should('not.be.empty');

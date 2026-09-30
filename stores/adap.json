@@ -1,5 +1,5 @@
 {
-  "_notes": "Configured from the live site (June 2026). Quirks: /products/ root 301s to an external subdomain, so plp.main is the Access Doors category; no Pro Club; quote form lives at /new-request-a-quote/; theme differs from BESTUS (footer-v2, .Info-box contact column, plain .breadcrumbs, no sidebar .categories-left, no related-products carousel, product form in #crmWebToEntityForm). Verified live July 2 2026: breadcrumbs carry a.breadcrumb-label (incl. Home) on PLP+PDP — breadcrumbHome/breadcrumbLabel filled; PLP pagination is AngularJS-rendered .ss-pagination-container > ul.pagination-list > li.pagination-item (active: .pagination-item--current, links: a.pagination-link, next: .pagination-item--next a, ?p=2) — plp.selectors.pagination filled; sort hash #/sort:searchspring_price:asc re-confirmed. LIGHTHOUSE: single fleet-wide LIGHTHOUSE_THRESHOLDS floor (performance 50, accessibility 60, seo 65) applied uniformly — per-store/per-page overrides removed July 2026; best-practices no longer asserted (dropped July 22 2026, platform-level/non-actionable). Live a11y scores homepage 83 / plp 73 / pdp 76 all clear the 60 floor. July 21 2026: dropped discovery.categories '/shop-by-size/access-doors-panels/' — it is a SearchSpring Angular 'shop by size' grid whose card images use ng-src/data-src lazyload with no src attr (visibility:hidden until scrolled), so assertProductCards' img-src check fails. Standard SS-template category pages (e.g. /products/access-doors/application/, /bilco/basement-door/) render .card-figure img with a resolved src and pass; kept those. KNOWN THEME BUG (verified July 27 2026): PDP theme calls jQuery.fancybox() before the lightbox plugin script has loaded (script-order/timing race) → 'jQuery(...).fancybox is not a function' TypeError at document-ready — a first-party theme bug (fires for real users on the same race), low-severity (product-gallery lightbox). Suppressed via a KNOWN_BUGGY_SCRIPTS messagePattern (/.fancybox is not a function/) in checks.js. ADAP devs must load the fancybox plugin before calling it.",
+  "_notes": "Configured from the live site (June 2026). Quirks: /products/ root 301s to an external subdomain, so plp.main is the Access Doors category; no Pro Club; quote form lives at /new-request-a-quote/; theme differs from BESTUS (footer-v2, .Info-box contact column, plain .breadcrumbs, no sidebar .categories-left, no related-products carousel, product form in #crmWebToEntityForm). Verified live July 2 2026: breadcrumbs carry a.breadcrumb-label (incl. Home) on PLP+PDP — breadcrumbHome/breadcrumbLabel filled; PLP pagination is AngularJS-rendered .ss-pagination-container > ul.pagination-list > li.pagination-item (active: .pagination-item--current, links: a.pagination-link, next: .pagination-item--next a, ?p=2) — plp.selectors.pagination filled; sort hash #/sort:searchspring_price:asc re-confirmed. LIGHTHOUSE: single fleet-wide LIGHTHOUSE_THRESHOLDS floor (performance 50, accessibility 60, seo 65) applied uniformly — per-store/per-page overrides removed July 2026; best-practices no longer asserted (dropped July 22 2026, platform-level/non-actionable). Live a11y scores homepage 83 / plp 73 / pdp 76 all clear the 60 floor. July 21 2026: dropped discovery.categories '/shop-by-size/access-doors-panels/' — it is a SearchSpring Angular 'shop by size' grid whose card images use ng-src/data-src lazyload with no src attr (visibility:hidden until scrolled), so assertProductCards' img-src check fails. Standard SS-template category pages (e.g. /products/access-doors/application/, /bilco/basement-door/) render .card-figure img with a resolved src and pass; kept those. KNOWN THEME BUG (verified July 27 2026): PDP theme calls jQuery.fancybox() before the lightbox plugin script has loaded (script-order/timing race) → 'jQuery(...).fancybox is not a function' TypeError at document-ready — a first-party theme bug (fires for real users on the same race), low-severity (product-gallery lightbox). Suppressed via a KNOWN_BUGGY_SCRIPTS messagePattern (/.fancybox is not a function/) in checks.js. ADAP devs must load the fancybox plugin before calling it. SEPT 29 2026 — two June 2026 absences turned out stale, both now enabled: (1) /architects/ carries a standard embedded Zoho form, ADAPArchitects2 (required: Name_First, Name_Last, Email, PhoneNumber_countrycode). Its City is plain text in SingleLine1 and there is no region field, so forms.architectInquiries sets cityField:'SingleLine1' / regionField:null (read by ArchitectFormPage); its _absentFeatures entry was removed. FSE's /architects/ iframes this same form, which looks like a copy-paste embed on FSE's side. (2) PDPs now emit a complete Product JSON-LD block (name, sku, description, image, offers with price/USD/InStock), so pdp.productJsonLd:false was removed and seo.cy.js's JSON-LD test runs.",
   "_todo": "checkout: not yet onboarded. Fill the `checkout` section per stores/bestus.json once (a) a QA customer account exists on this storefront and its credentials are wired in (CHECKOUT_EMAIL_<CODE>/CHECKOUT_PASSWORD_<CODE> or a credentials.json entry), and (b) a purchasable, in-stock, option-free, parcel-shippable product slug has been verified live. Onboard one store at a time, only after BESTUS runs green. Enables checkout.cy.js.",
   "_absentFeatures": [
     {
@@ -7,12 +7,6 @@
       "fillWith": "{ \"path\": \"/<form-page>/\", \"submitUrlPattern\": \"**/forms.zohopublic.com/**/<ZohoFormName>/**/submit\" }",
       "verifiedAbsent": "no Pro Club program on live site (June 2026 onboarding)",
       "enables": "pro-club-form.cy.js"
-    },
-    {
-      "configKey": "forms.architectInquiries",
-      "fillWith": "{ \"path\": \"/<form-page>/\", \"submitUrlPattern\": \"**/forms.zohopublic.com/**/<ZohoFormName>/**/submit\" }",
-      "verifiedAbsent": "no /architects/ page on live site (June 2026 onboarding)",
-      "enables": "architect-form.cy.js"
     }
   ],
   "storeCode": "ADAP",
@@ -116,7 +110,13 @@
       "path": "/bvl1/",
       "submitUrlPattern": "**/forms.zohopublic.com/**/ADAPcomApplyForVendor/**/submit"
     },
-    "architectInquiries": null
+    "architectInquiries": {
+      "_note": "Architects form found live Sept 29 2026 (the June 2026 _absentFeatures entry was stale): standard embedded Zoho form ADAPArchitects2. City is a plain text field (SingleLine1), not Zoho's Address_City, and there is no region field.",
+      "path": "/architects/",
+      "cityField": "SingleLine1",
+      "regionField": null,
+      "submitUrlPattern": "**/forms.zohopublic.com/**/ADAPArchitects2/**/submit"
+    }
   },
   "personaOverrides": {
     "address1": "123 Test Lane",
@@ -148,8 +148,7 @@
     }
   },
   "pdp": {
-    "_popularNote": "The milcor 18x18 door (products.default) is excluded here: it has no PDF spec sheet, which the PDP spec asserts. productJsonLd:false — ADAP's theme emits no Product JSON-LD (real SEO gap, verified June 2026).",
-    "productJsonLd": false,
+    "_popularNote": "The milcor 18x18 door (products.default) is excluded here: it has no PDF spec sheet, which the PDP spec asserts. ADAP's theme emitted no Product JSON-LD in June 2026 (productJsonLd:false); it now emits a complete Product block with name, sku, description, image and offers (price, USD, InStock), so the gate was removed (verified live Sept 29 2026).",
     "popular": [
       "/18-x-36-drywall-access-door-elmdor/",
       "/6-x-6-flush-access-door-with-concealed-latch-and-drywall-flange/",
