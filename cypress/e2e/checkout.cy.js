@@ -26,7 +26,7 @@ const pdpSel = pdpSelectors();
  * the dashboard — see its own comment block, and MAINTENANCE.md §8b for the cleanup it creates.
  *
  * GATE LAYERS, each saying something different and only some of them actionable:
- *   1. describeIfStore(checkout, …)  -> "[skipped: not configured for ADAP]" — store not onboarded
+ *   1. describeIfStore(checkout, …)  -> "[skipped: not configured for <CODE>]" — store not onboarded
  *   2. itIfStore(creds, …, reason)   -> "[skipped: checkout credentials not on this machine …]"
  *   3. itIfStore(… isPlaceOrder(), …, NOT_ARMED) -> "[skipped: order placement not armed …]"
  * (1) is a fact about the store, (2) about the machine, (3) about the command — so they read
@@ -34,9 +34,9 @@ const pdpSel = pdpSelectors();
  */
 describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
   // COLLECTION-TIME TRAP: Mocha still EVALUATES a describe.skip body in order to collect its
-  // pending tests, so a suite-level `checkout.product` dereference would throw on the eight stores
-  // where checkout is null — turning a clean "[skipped: not configured for ADAP]" into a spec-load
-  // crash. Every dereference below therefore sits inside a hook or an it().
+  // pending tests, so a suite-level `checkout.product` dereference would throw on every store
+  // where checkout is null — turning a clean "[skipped: not configured for <CODE>]" into a
+  // spec-load crash. Every dereference below therefore sits inside a hook or an it().
   const page = new CheckoutPage();
   let persona;
   let consoleErrors;
@@ -173,7 +173,9 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
     // cy.on rather than cy.visit's onBeforeLoad because this flow navigates at least twice
     // (PDP -> /checkout), and possibly a third time if sign-in turns out to be a real page load.
     // cy.on re-attaches the spy to every window this test loads and is auto-removed at the end of
-    // the test; an { onBeforeLoad } option would only cover the one visit it is passed to.
+    // the test; an { onBeforeLoad } option would only cover the one visit it is passed to. Note
+    // assertClean() reads only the LAST window's spy (each load replaces it), i.e. /checkout — the
+    // PDP's console is pdp.cy.js's concern, not this spec's.
     cy.on('window:before:load', spy.onBeforeLoad);
 
     // 1/6 — clean slate. Delete the server-side cart FIRST, then drop the session: clearing
@@ -332,9 +334,9 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
       // NO subtotal ASSERTION, ON PURPOSE. The IDENTITY is what is under test, not any one term,
       // so it holds unchanged whatever the subtotal is. On BESTUS that subtotal is legitimately 0
       // — the QA customer's group carries a price list zeroing the product (listPrice/salePrice 0
-      // against an originalPrice of 180.69), so what is payable is shipping + tax. A store whose
-      // QA group does not zero the product (BESTCA) reconciles identically with a non-zero
-      // subtotal. Do NOT "fix" either case by asserting on subtotal — that would encode one
+      // against an originalPrice of 180.69), so what is payable is shipping + tax. BESTCA's group
+      // zeroes it too and adds free shipping, so its whole identity is 0 = 0; a store whose QA
+      // group does not zero the product reconciles identically with a non-zero subtotal. Do NOT "fix" either case by asserting on subtotal — that would encode one
       // store's customer-group pricing into a spec all nine share.
       const parts = state.subtotal + state.shippingCostTotal + state.handlingCostTotal
         + state.taxTotal - state.totalDiscount;
@@ -365,11 +367,13 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
    * Cypress resets BROWSER state between tests but never reloads the spec bundle — module and
    * closure state survive, and makeConsoleErrorSpy is closure-based for exactly this reason.
    *
-   * Ships gated OFF (consoleIgnore defaults to null). BigCommerce checkout will not be
-   * console-clean: expect cross-origin checkout-sdk warnings, payment-provider iframes probing for
-   * wallets, and blocked GTM leaving fbq/gtag undefined in first-party inline code. Run the flow
-   * live once, read what assertClean() prints, then set checkout.consoleIgnore to the triaged list.
-   * Keeping the list in store config rather than checks.js keeps it per-store and data-driven.
+   * Ships gated OFF (consoleIgnore defaults to null) until a store's noise has been triaged. It
+   * varies by store: BESTUS's checkout logs PayPal SDK errors plus a sourceless
+   * console.error(undefined) (left skipped), while BESTCA's logs nothing at all (runs with []). To
+   * triage, set checkout.consoleIgnore to [] and run the flow live once, then read what
+   * assertClean() prints and set checkout.consoleIgnore to the triaged list. A clean first run
+   * needs a positive control, because it cannot show the spy saw anything. Keeping the list in
+   * store config rather than checks.js keeps it per-store and data-driven.
    */
   itIfStore(
     creds && checkout.consoleIgnore !== null,
@@ -402,7 +406,7 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
    * configured and merely unarmed. itIfStore does take a reason, so that is where they go.
    *
    * OPERAND ORDER IS LOAD-BEARING: `checkout &&` must come first. This condition is evaluated at
-   * collection time on ALL NINE stores, and eight of them carry "checkout": null — the same trap
+   * collection time on ALL NINE stores, and those not yet onboarded carry "checkout": null — the same trap
    * documented at the top of this file.
    *
    * retries:0 VIA A NESTED describe, NOT VIA it(). itIfStore's signature is

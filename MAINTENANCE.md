@@ -336,7 +336,15 @@ Sept 22 2026** and is the worked example; steps 1–3 below need no browser at a
    the `activeStepClass` drift entirely, which in turn masked the `storeCreditCheckbox`
    one. Budget for three or four red runs, and re-read the log each time rather than
    assuming the previous diagnosis still explains the new failure.
-6. Leave `consoleIgnore: null` until the console noise is actually triaged.
+6. Leave `consoleIgnore: null` until the console noise is actually triaged. To
+   triage, set it to `[]` once the funnel is green and run the spec twice. Each
+   entry `assertClean()` throws is either vendor noise with a distinctive substring
+   (ignore it), a first-party defect (leave the test failing, per the site-deficiency
+   policy), or matchable only by something like `"undefined"` (revert to `null` and
+   record why, as BESTUS does). **A clean first run needs a positive control**,
+   because a pass cannot show the spy saw the page. BESTCA's zero (Sept 30 2026) was
+   confirmed by running BESTUS, whose checkout has known noise, through the same
+   wiring and seeing it caught.
 7. Run it **twice back to back** and compare the `address book holds N saved
    address(es)` lines. N must be identical. Note BESTCA's "Save this address in my
    address book" ships **checked** where BESTUS's ships unchecked, so on some themes
