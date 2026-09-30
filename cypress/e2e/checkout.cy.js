@@ -115,7 +115,11 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
   // merge loudly if BigCommerce ever starts doing one.
 
   before(() => {
-    cy.fixture('personas').then((p) => { persona = storePersona(p.primary); });
+    // checkout.personaOverrides sits on top of the store persona for the checkout only; see
+    // CHECKOUT_DEFAULTS in store.js for why (PDA's checkout labels its one country in Spanish).
+    cy.fixture('personas').then((p) => {
+      persona = { ...storePersona(p.primary), ...(checkout.personaOverrides || {}) };
+    });
   });
 
   afterEach(() => {

@@ -328,6 +328,22 @@ Sept 22 2026** and is the worked example; steps 1–3 below need no browser at a
      `suppressAddressSwitchInlineErrors` covers.
 
    Finding these here names the failure before the first live run does.
+
+   While the throwaway cart exists, make three more checks (all from the Sept 30 2026
+   fleet onboarding):
+   - **`GET /api/storefront/checkouts/<cartId>` → `shouldExecuteSpamCheck`.** `true`
+     means BigCommerce checkout spam protection is on. The payment step then waits on
+     a reCAPTCHA check that automation cannot pass (ADC: an image challenge), so the
+     store cannot be onboarded until that changes.
+   - **Grep the `/checkout` source for theme-enforced requirements.** A field
+     `form-fields` reports as `required:false` can still be made mandatory by the
+     store's own script. BRH's `field_28` becomes required whenever a freight method
+     is selected. The symptom is a shipping step that never collapses.
+   - **`GET /api/storefront/payments?cartId=<cartId>`** (send the `X-API-INTERNAL`
+     header checkout-sdk uses) lists the gateways. With only one or two
+     (CAD, PDA), no `ul.form-checklist` renders under the store-credit overlay. That
+     calls for `selectors.paymentMethodOption: null`; it is not a missing-gateway
+     defect.
 4. Fill the `checkout` section per `stores/bestus.json`, replacing the `_todo`.
 5. Run the spec. `checkout.selectors` (theme drift) is now the main thing left to
    calibrate live. Three keys worth knowing about before you meet them:

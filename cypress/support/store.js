@@ -391,6 +391,14 @@ const CHECKOUT_DEFAULTS = {
   // null, not [] — an un-triaged store must not silently inherit a console-error assertion that
   // nobody has actually looked at. null makes the console test skip with a reason.
   consoleIgnore: null,
+  // Persona fields merged over the store's persona (storePersona()) for the CHECKOUT ONLY, for
+  // stores whose checkout labels a field differently from their Zoho forms. PDA is the case: its
+  // Zoho country lists are English-labelled ("Mexico"), while checkout-js renders the es-mx
+  // label ("México") and offers Mexico only. cy.select() matches an option's value as well as its
+  // text, so an override can name the stable BigCommerce codes (country "MX", state "CMX")
+  // instead of a localized label. Kept separate from the top-level personaOverrides so a checkout
+  // quirk never changes what the form specs submit.
+  personaOverrides: null,
 };
 
 /**
