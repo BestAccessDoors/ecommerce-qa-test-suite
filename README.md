@@ -248,7 +248,7 @@ Skips are always deliberate and always visible — a skipped test means a config
 | What's pending | Why | Enable by |
 |---|---|---|
 | All 3 Lighthouse audits | The spec self-skips outside Chrome | Already runs — every command and launcher defaults to Chrome. Only pending if you override with `--browser firefox`. |
-| The checkout flow test | This machine holds no checkout sign-in credentials | Copy `credentials.example.json` to `credentials.json` and fill it in, or set `CHECKOUT_EMAIL_<CODE>` / `CHECKOUT_PASSWORD_<CODE>`. Configured on BESTUS, BESTCA, ADAP, CAD and FSE so far; the other four stores show it as "not configured" until onboarded. |
+| The checkout flow test | This machine holds no checkout sign-in credentials | Copy `credentials.example.json` to `credentials.json` and fill it in, or set `CHECKOUT_EMAIL_<CODE>` / `CHECKOUT_PASSWORD_<CODE>`. Configured on BESTUS, BESTCA, ADAP, CAD, FSE and AAP so far; the other three stores show it as "not configured" until onboarded. |
 | `checkout.cy.js`'s console-error check | `checkout.consoleIgnore` is `null` on every store — the checkout page's console noise has not been triaged | Triage the errors on that store, then set `checkout.consoleIgnore` to the list worth ignoring. |
 | `checkout.cy.js`'s order-placement test | Skipped by design on every ordinary run — it places a **real order**. Reads `[skipped: order placement not armed — CLI only, …]` | Run `npm run test:checkout-order:store -- <store> --spec "cypress/e2e/checkout.cy.js"` on a store whose config sets `checkout.placeOrder`. Cancel the resulting order by hand; see `MAINTENANCE.md` §8b. |
 
