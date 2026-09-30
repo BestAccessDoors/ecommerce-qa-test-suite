@@ -313,6 +313,21 @@ Sept 22 2026** and is the worked example; steps 1–3 below need no browser at a
    physical line items and why a raw `POST /api/storefront/carts` with no
    `optionSelections` is rejected as "requires modifier options". Count the
    `<input name="attribute[...]">` elements; zero is what you want.
+   **Then read the `/checkout` page source.** It only renders with a cart (it 302s to
+   `/cart.php` otherwise), so create a throwaway anonymous cart:
+   - `POST /api/storefront/carts` with `{"lineItems":[{"quantity":1,"productId":<id>}]}`,
+     keeping the cookie jar. The id is `data-product-id` on the PDP.
+   - Fetch `/checkout` with `Accept: text/html`, then `DELETE` the cart.
+   - The delete needs an `X-XSRF-TOKEN` header copied from the `XSRF-TOKEN` cookie.
+     Without it BigCommerce answers 403 and the cart stays.
+
+   Grep the source for the two template defects this fleet shares (both found on ADAP,
+   Sept 30 2026):
+   - `stopFunction2(myVar2)` recursing into itself. BESTCA's copy was fixed; ADAP's was not.
+   - a `selected.value` read in the saved-address click handler, which is what
+     `suppressAddressSwitchInlineErrors` covers.
+
+   Finding these here names the failure before the first live run does.
 4. Fill the `checkout` section per `stores/bestus.json`, replacing the `_todo`.
 5. Run the spec. `checkout.selectors` (theme drift) is now the main thing left to
    calibrate live. Three keys worth knowing about before you meet them:

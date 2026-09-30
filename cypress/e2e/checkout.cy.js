@@ -1,4 +1,4 @@
-import { makeConsoleErrorSpy } from '../support/checks.js';
+import { makeConsoleErrorSpy, isToleratedAppError } from '../support/checks.js';
 import { CheckoutPage } from '../support/pages/CheckoutPage.js';
 import { checkoutCredentials, NO_CHECKOUT_CREDENTIALS } from '../support/utils/checkoutCredentials.js';
 import { isPlaceOrder, NOT_ARMED } from '../support/utils/orderGuard.js';
@@ -131,7 +131,38 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
     // then invisible even to a later signed-in API call — so the failure mode leaves no trace and
     // looks exactly like success. That is why clearAllCarts logs its count unconditionally,
     // including zero: the zero is the tell.
+    //
+    // CLEANUP MUST SURVIVE THE PAGE IT IS CLEANING UP AFTER — without changing any verdict. The
+    // /checkout document is still loaded while this hook runs, so a page timer that throws (ADAP's
+    // stopFunction2 recursion fires every second on the payment step) aborts the hook mid-request.
+    // Measured Sept 30 2026: the hook failed, no "after-cleanup" line was logged, and the signed-in
+    // cart was orphaned. So errors are HELD while the carts are deleted and RE-RAISED afterwards,
+    // filtered through the same isToleratedAppError policy the global handler applies.
+    //
+    // Re-raising is not optional. ADAP's timer starts throwing right around the moment the test
+    // body finishes, so the same run can see it inside the body or only here. Before this hook held
+    // errors it failed on it either way; swallowing it here would have turned a reliable red signal
+    // for a live site defect into a coin toss. That was measured too, on the first draft of this
+    // hook: the funnel test went green while 3 RangeErrors were silently dropped.
+    const heldPageErrors = [];
+    cy.on('uncaught:exception', (err) => {
+      heldPageErrors.push(err);
+      return false;
+    });
     clearAllCarts('after-cleanup');
+    cy.then(() => {
+      const failing = heldPageErrors.filter((err) => !isToleratedAppError(err));
+      if (!failing.length) return;
+      // Cypress wraps the app's message in its own preamble; the real text is on the "  > …" line.
+      const describe = (err) => {
+        const msg = String(err.message);
+        const detail = (msg.match(/^\s*>\s*(.+)$/m) || [null, msg.split('\n')[0]])[1];
+        const frame = (String(err.stack || '').match(/\((https?:\/\/[^)]+)\)/) || [])[1];
+        return `${detail}${frame ? `  [${frame}]` : ''}`;
+      };
+      throw new Error(`the page threw ${failing.length} uncaught error(s) after the test body `
+        + `(re-raised once cart cleanup had run): ${[...new Set(failing.map(describe))].join(' | ')}`);
+    });
   });
 
   /**

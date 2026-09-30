@@ -1,7 +1,7 @@
 import './commands';
 import 'cypress-real-events';
 import '@cypress-audit/lighthouse/commands';
-import { blockThirdParty, THIRD_PARTY_HOSTS, KNOWN_BUGGY_SCRIPTS } from './checks';
+import { blockThirdParty, isToleratedAppError } from './checks';
 import { isLiveSubmit } from './utils/zohoIntercept.js';
 import {
   closeOrderWindow, isOrderWindowOpen, recordAllowedOrderPost, takeAllowedOrderPosts,
@@ -241,25 +241,8 @@ Cypress.on('window:before:load', (win) => {
 // a promise it leaves in a rejected state — this handler cannot rescue it.
 Cypress.on('uncaught:exception', (err) => {
   Cypress.log({ name: 'Uncaught Error', message: err.message });
-  // A redacted cross-origin failure has two shapes: a THROWN error (Cypress wording
-  // ".../cross origin script/...") and an unhandled REJECTION whose reject value is a
-  // non-Error object — Cypress's makeErrFromObj wraps the latter as "An unknown error has
-  // occurred: [object Object]" (no "cross origin script" wording). Both are SOP-stripped of
-  // all first-party detail, so both are suppressed here. (FSE: SearchSpring's cross-origin
-  // Snap bundle throws `t.isImmediatePropagationStopped is not a function` on product-card
-  // click → arrives as the opaque-rejection shape.) A genuine first-party regression throws
-  // an Error with a real message+stack and never produces the opaque wrapper, so this stays
-  // safe. See CLAUDE.md Global Setup + stores/fse.json _notes.
-  const isRedactedCrossOrigin =
-    /cross origin script/i.test(err.message) ||
-    /an unknown error has occurred/i.test(err.message);
-  const stack = err.stack || '';
-  const isKnownThirdParty = THIRD_PARTY_HOSTS.some(({ pattern }) => pattern.test(stack));
-  const isKnownBuggyScript = KNOWN_BUGGY_SCRIPTS.some(
-    ({ stackPattern, messagePattern }) =>
-      (stackPattern && stackPattern.test(stack)) ||
-      (messagePattern && messagePattern.test(err.message))
-  );
-  return !(isRedactedCrossOrigin || isKnownThirdParty || isKnownBuggyScript);
+  // The policy itself (redacted cross-origin, THIRD_PARTY_HOSTS stack, KNOWN_BUGGY_SCRIPTS) lives
+  // in checks.js's isToleratedAppError, so checkout.cy.js's afterEach can reuse the same verdict.
+  return !isToleratedAppError(err);
 });
 
