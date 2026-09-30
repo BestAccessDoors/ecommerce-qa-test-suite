@@ -313,6 +313,37 @@ Sept 22 2026** and is the worked example; steps 1–3 below need no browser at a
    physical line items and why a raw `POST /api/storefront/carts` with no
    `optionSelections` is rejected as "requires modifier options". Count the
    `<input name="attribute[...]">` elements; zero is what you want.
+   **Then read the `/checkout` page source.** It only renders with a cart (it 302s to
+   `/cart.php` otherwise), so create a throwaway anonymous cart:
+   - `POST /api/storefront/carts` with `{"lineItems":[{"quantity":1,"productId":<id>}]}`,
+     keeping the cookie jar. The id is `data-product-id` on the PDP.
+   - Fetch `/checkout` with `Accept: text/html`, then `DELETE` the cart.
+   - The delete needs an `X-XSRF-TOKEN` header copied from the `XSRF-TOKEN` cookie.
+     Without it BigCommerce answers 403 and the cart stays.
+
+   Grep the source for the two template defects this fleet shares (both found on ADAP,
+   Sept 30 2026):
+   - `stopFunction2(myVar2)` recursing into itself. BESTCA's copy was fixed; ADAP's was not.
+   - a `selected.value` read in the saved-address click handler, which is what
+     `suppressAddressSwitchInlineErrors` covers.
+
+   Finding these here names the failure before the first live run does.
+
+   While the throwaway cart exists, make three more checks (all from the Sept 30 2026
+   fleet onboarding):
+   - **`GET /api/storefront/checkouts/<cartId>` → `shouldExecuteSpamCheck`.** `true`
+     means BigCommerce checkout spam protection is on. The payment step then waits on
+     a reCAPTCHA check that automation cannot pass (ADC: an image challenge), so the
+     store cannot be onboarded until that changes.
+   - **Grep the `/checkout` source for theme-enforced requirements.** A field
+     `form-fields` reports as `required:false` can still be made mandatory by the
+     store's own script. BRH's `field_28` becomes required whenever a freight method
+     is selected. The symptom is a shipping step that never collapses.
+   - **`GET /api/storefront/payments?cartId=<cartId>`** (send the `X-API-INTERNAL`
+     header checkout-sdk uses) lists the gateways. With only one or two
+     (CAD, PDA), no `ul.form-checklist` renders under the store-credit overlay. That
+     calls for `selectors.paymentMethodOption: null`; it is not a missing-gateway
+     defect.
 4. Fill the `checkout` section per `stores/bestus.json`, replacing the `_todo`.
 5. Run the spec. `checkout.selectors` (theme drift) is now the main thing left to
    calibrate live. Three keys worth knowing about before you meet them:
@@ -336,7 +367,15 @@ Sept 22 2026** and is the worked example; steps 1–3 below need no browser at a
    the `activeStepClass` drift entirely, which in turn masked the `storeCreditCheckbox`
    one. Budget for three or four red runs, and re-read the log each time rather than
    assuming the previous diagnosis still explains the new failure.
-6. Leave `consoleIgnore: null` until the console noise is actually triaged.
+6. Leave `consoleIgnore: null` until the console noise is actually triaged. To
+   triage, set it to `[]` once the funnel is green and run the spec twice. Each
+   entry `assertClean()` throws is either vendor noise with a distinctive substring
+   (ignore it), a first-party defect (leave the test failing, per the site-deficiency
+   policy), or matchable only by something like `"undefined"` (revert to `null` and
+   record why, as BESTUS does). **A clean first run needs a positive control**,
+   because a pass cannot show the spy saw the page. BESTCA's zero (Sept 30 2026) was
+   confirmed by running BESTUS, whose checkout has known noise, through the same
+   wiring and seeing it caught.
 7. Run it **twice back to back** and compare the `address book holds N saved
    address(es)` lines. N must be identical. Note BESTCA's "Save this address in my
    address book" ships **checked** where BESTUS's ships unchecked, so on some themes

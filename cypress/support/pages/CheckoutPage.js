@@ -176,8 +176,12 @@ export class CheckoutPage {
     // BigCommerce swaps this field's ELEMENT TYPE with the selected country: a <select> for
     // countries with a defined state list (US/CA), a free-text <input> otherwise. Same
     // conditional-presence idiom as ZohoFormPage.fillPhone's optional country-code field.
+    // force on BOTH branches: PDA's checkout runs an address-autocomplete widget whose suggestion
+    // list (div.ag-autocomplete__item) opens after the street address is typed and can still be
+    // covering the state <select> when this runs (seen Sept 30 2026, 1 run in 2). Forcing only
+    // skips Cypress's actionability check; cy.select() still fails if no option matches `v`.
     cy.get('body').then(($b) => {
-      if ($b.find(this.sel.provinceSelect).length) cy.get(this.sel.provinceSelect).select(v);
+      if ($b.find(this.sel.provinceSelect).length) cy.get(this.sel.provinceSelect).select(v, { force: true });
       else cy.get(this.sel.provinceInput).clear({ force: true }).type(v, { force: true });
     });
     return this;

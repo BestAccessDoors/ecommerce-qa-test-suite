@@ -292,6 +292,37 @@ export const KNOWN_BUGGY_SCRIPTS = [
   },
 ];
 
+/**
+ * The suite-wide uncaught:exception policy, as a predicate: true when an APP-frame error is one
+ * the suite deliberately tolerates, false when it should fail the test. e2e.js's global handler is
+ * this predicate negated. It is exported so code that must briefly take over error handling (the
+ * checkout spec's afterEach, which has to finish its cart cleanup) can hand back exactly the verdict
+ * the global handler would have reached, rather than a looser or stricter one of its own.
+ */
+export function isToleratedAppError(err) {
+  // A redacted cross-origin failure has two shapes: a THROWN error (Cypress wording
+  // ".../cross origin script/...") and an unhandled REJECTION whose reject value is a
+  // non-Error object — Cypress's makeErrFromObj wraps the latter as "An unknown error has
+  // occurred: [object Object]" (no "cross origin script" wording). Both are SOP-stripped of
+  // all first-party detail, so both are suppressed here. (FSE: SearchSpring's cross-origin
+  // Snap bundle throws `t.isImmediatePropagationStopped is not a function` on product-card
+  // click → arrives as the opaque-rejection shape.) A genuine first-party regression throws
+  // an Error with a real message+stack and never produces the opaque wrapper, so this stays
+  // safe. See CLAUDE.md Global Setup + stores/fse.json _notes.
+  const message = String(err.message);
+  const isRedactedCrossOrigin =
+    /cross origin script/i.test(message) ||
+    /an unknown error has occurred/i.test(message);
+  const stack = err.stack || '';
+  const isKnownThirdParty = THIRD_PARTY_HOSTS.some(({ pattern }) => pattern.test(stack));
+  const isKnownBuggyScript = KNOWN_BUGGY_SCRIPTS.some(
+    ({ stackPattern, messagePattern }) =>
+      (stackPattern && stackPattern.test(stack)) ||
+      (messagePattern && messagePattern.test(message))
+  );
+  return isRedactedCrossOrigin || isKnownThirdParty || isKnownBuggyScript;
+}
+
 // NOTE on BRH's document-ready theme bugs (.trim()-on-undefined, "$ is not a function"): those are
 // NOT handled here. jQuery surfaces them asynchronously via setTimeout in a way that never reaches
 // the uncaught:exception handler, so they're prevented at the source by a setTimeout wrap in e2e.js
