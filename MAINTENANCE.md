@@ -381,6 +381,14 @@ Sept 22 2026** and is the worked example; steps 1–3 below need no browser at a
    address book" ships **checked** where BESTUS's ships unchecked, so on some themes
    `ensureSaveAddressUnchecked()` is the only thing standing between a shared account
    and one new address per run.
+8. Read the **mobile** test's result separately: "reaches the payment step on a phone
+   without forcing any click". It runs the same funnel at 393x852 with a strict
+   `CheckoutPage` (no `force` anywhere), so it is the first thing to go red when a
+   popup, sticky bar or autocomplete list covers a control that the desktop funnel
+   simply clicked through. A failure naming a covering element is a finding to
+   triage under the site-deficiency policy. Re-adding `force` is not a fix. Check
+   the per-attempt results as well as the final colour, because a popup that covers
+   only sometimes can fail attempt 1 and pass attempt 2.
 
 Two stores need a judgement call first: **BRH** is `pdp.quoteOnly` with no Add to
 Cart anywhere, so it may have no checkout journey at all; **PDA** is Spanish, and
