@@ -28,12 +28,74 @@ export class CheckoutPage {
   // constructor). Safe to construct inside a describe.skip body on a "checkout": null store —
   // Mocha still evaluates those bodies, checkoutConfig() returns null, and nothing dereferences
   // it until a method is actually called.
-  constructor(config = checkoutConfig(), selectors = checkoutSelectors()) {
+  /**
+   * @param {object} [options]
+   * @param {boolean} [options.strict=false] — STRICT MODE, used by the mobile checkout test. Off by
+   *   default, and every ordinary caller leaves it off, so the desktop funnel and the armed order
+   *   test behave exactly as they always have.
+   *
+   *   The desktop funnel force-clicks and force-types nearly everything because the Klaviyo popup
+   *   and PDA's address-autocomplete list can sit on top of controls mid-run. That is the right
+   *   trade for a funnel whose job is to REACH the payment step, and the wrong one for a test whose
+   *   job is to find out whether a phone user can: `force` skips Cypress's "is this element
+   *   covered / visible / scrolled into view" check, which is precisely the thing that fails for a
+   *   real thumb. Strict mode therefore drops `force` entirely, so a covered control fails the test
+   *   and Cypress names the element covering it.
+   *
+   *   The one place it cannot simply drop `force` is a radio or checkbox that checkout-js hides
+   *   behind a styled label — an un-forced check() on those fails "not visible" on desktop too, so
+   *   that is how the theme is built rather than a flaw. Strict mode taps the label instead (see
+   *   tapLabelFor), which is what a thumb actually hits.
+   */
+  constructor(config = checkoutConfig(), selectors = checkoutSelectors(), { strict = false } = {}) {
     this.cfg = config;
     this.sel = selectors;
+    this.strict = strict;
     // Set during the flow, read by assertAddressHeld()/assertShippingSummary(). True only on the
     // fallback path, where the spec did not get to type an address — see chooseNewAddress().
     this.usingSavedAddress = false;
+  }
+
+  /** What every `{ force: … }` below passes: true normally, false in strict mode. */
+  get force() {
+    return !this.strict;
+  }
+
+  /**
+   * STRICT-MODE ONLY. Sets a radio/checkbox by tapping its <label for="…"> rather than forcing the
+   * hidden native input, then asserts the input really took the state.
+   *
+   * The input is RE-QUERIED by id for the assertion rather than reusing the jQuery handle: tapping
+   * a shipping radio makes checkout-js re-render, which can detach the original node and turn a
+   * perfectly good `be.checked` into a failure against an element that no longer exists.
+   *
+   * A TRUSTED click (`realClick`, from cypress-real-events), not `cy.click()`. MEASURED on BESTCA
+   * (Oct 1 2026): a `cy.click()` on the "Save this address" label landed — label visible, not
+   * covered, hit-testable at its centre — and the box stayed checked, while a `realClick()` on the
+   * same label unchecked it at once. Cypress's synthetic events do not reliably trigger a label's
+   * activation behaviour, so a strict run would report a site defect that is really a Cypress
+   * quirk. `realClick` goes through Chrome's own input pipeline like a real tap, which is also the
+   * more honest thing for a mobile test to do. It is CDP-based and so Chromium-only; the mobile
+   * test is gated to Chromium for this reason.
+   *
+   * realClick does no actionability checks of its own (it clicks whatever is at the coordinates),
+   * so assertNotCovered() runs first: a covered label still fails with the culprit named, rather
+   * than as an unexplained "still checked".
+   *
+   * Returns NOTHING, unlike the chainable methods around it, because it is called from inside
+   * `.then()` callbacks: returning `this` there after queuing cy commands makes Cypress fail with
+   * "you are mixing up async and sync code".
+   */
+  tapLabelFor($input, wanted = true) {
+    const id = $input.first().attr('id');
+    expect(id, 'a styled radio/checkbox needs an id so its <label for> can be tapped')
+      .to.be.a('string').and.not.be.empty;
+    if ($input.first().is(':checked') !== wanted) {
+      const label = `label[for="${id}"]`;
+      this.assertNotCovered(label, `the label for #${id}`);
+      cy.get(label).first().realClick();
+    }
+    cy.get(`[id="${id}"]`).should(wanted ? 'be.checked' : 'not.be.checked');
   }
 
   get path() {
@@ -64,9 +126,9 @@ export class CheckoutPage {
       const $link = $step.find(`a:contains("${this.cfg.signInLinkText}")`);
       // force: the Klaviyo email-capture popup is deliberately left unblocked (it is
       // store-functional) and covers DOM elements mid-run — the same reason every other spec in
-      // this suite forces its clicks.
-      if ($link.length) cy.wrap($link.first()).click({ force: true });
-      else cy.get(this.sel.signInLink).first().click({ force: true });
+      // this suite forces its clicks. (Strict mode drops it: see the constructor.)
+      if ($link.length) cy.wrap($link.first()).click({ force: this.force });
+      else cy.get(this.sel.signInLink).first().click({ force: this.force });
     });
     return this;
   }
@@ -80,20 +142,20 @@ export class CheckoutPage {
   submitSignInForm(email, password) {
     cy.get(this.sel.emailInput, { timeout: 20000 })
       .should('be.visible')
-      .clear({ force: true })
-      .type(email, { force: true });
+      .clear({ force: this.force })
+      .type(email, { force: this.force });
     cy.get(this.sel.passwordInput)
       .should('be.visible')
       // Assert it really is a password field before typing. If the theme ever ships this as
       // type="text", the value would render in plaintext into the run video and any failure
       // screenshot — better to fail loudly here than to leak silently.
       .and('have.attr', 'type', 'password')
-      .clear({ force: true })
+      .clear({ force: this.force })
       // log:false is NOT cosmetic. Cypress records video of the command log and writes a
       // screenshot on failure; without this the account password is printed in plaintext into
       // cypress/videos/<store>/ and cypress/screenshots/<store>/ on every single run.
-      .type(password, { force: true, log: false });
-    cy.get(this.sel.signInSubmit).first().click({ force: true });
+      .type(password, { force: this.force, log: false });
+    cy.get(this.sel.signInSubmit).first().click({ force: this.force });
     return this;
   }
 
@@ -151,19 +213,19 @@ export class CheckoutPage {
 
   // ─── Shipping address ──────────────────────────────────────────────────────
 
-  fillFirstName(v) { cy.get(this.sel.firstName).clear({ force: true }).type(v, { force: true }); return this; }
-  fillLastName(v) { cy.get(this.sel.lastName).clear({ force: true }).type(v, { force: true }); return this; }
-  fillCompany(v) { cy.get(this.sel.company).clear({ force: true }).type(v, { force: true }); return this; }
-  fillCity(v) { cy.get(this.sel.city).clear({ force: true }).type(v, { force: true }); return this; }
-  fillZip(v) { cy.get(this.sel.postCode).clear({ force: true }).type(v, { force: true }); return this; }
-  fillPhone(v) { cy.get(this.sel.phone).clear({ force: true }).type(v, { force: true }); return this; }
-  fillAddress2(v) { cy.get(this.sel.address2).clear({ force: true }).type(v, { force: true }); return this; }
+  fillFirstName(v) { cy.get(this.sel.firstName).clear({ force: this.force }).type(v, { force: this.force }); return this; }
+  fillLastName(v) { cy.get(this.sel.lastName).clear({ force: this.force }).type(v, { force: this.force }); return this; }
+  fillCompany(v) { cy.get(this.sel.company).clear({ force: this.force }).type(v, { force: this.force }); return this; }
+  fillCity(v) { cy.get(this.sel.city).clear({ force: this.force }).type(v, { force: this.force }); return this; }
+  fillZip(v) { cy.get(this.sel.postCode).clear({ force: this.force }).type(v, { force: this.force }); return this; }
+  fillPhone(v) { cy.get(this.sel.phone).clear({ force: this.force }).type(v, { force: this.force }); return this; }
+  fillAddress2(v) { cy.get(this.sel.address2).clear({ force: this.force }).type(v, { force: this.force }); return this; }
 
   fillAddress1(v) {
-    cy.get(this.sel.address1).clear({ force: true }).type(v, { force: true });
+    cy.get(this.sel.address1).clear({ force: this.force }).type(v, { force: this.force });
     // {esc}: when the store enables Google Places autocomplete on address line 1, its suggestion
     // dropdown overlays the fields below and swallows the next click. Dismiss it before moving on.
-    cy.get(this.sel.address1).type('{esc}', { force: true });
+    cy.get(this.sel.address1).type('{esc}', { force: this.force });
     return this;
   }
 
@@ -180,9 +242,10 @@ export class CheckoutPage {
     // list (div.ag-autocomplete__item) opens after the street address is typed and can still be
     // covering the state <select> when this runs (seen Sept 30 2026, 1 run in 2). Forcing only
     // skips Cypress's actionability check; cy.select() still fails if no option matches `v`.
+    // Strict mode drops it, so that same covering becomes a failure naming the widget.
     cy.get('body').then(($b) => {
-      if ($b.find(this.sel.provinceSelect).length) cy.get(this.sel.provinceSelect).select(v, { force: true });
-      else cy.get(this.sel.provinceInput).clear({ force: true }).type(v, { force: true });
+      if ($b.find(this.sel.provinceSelect).length) cy.get(this.sel.provinceSelect).select(v, { force: this.force });
+      else cy.get(this.sel.provinceInput).clear({ force: this.force }).type(v, { force: this.force });
     });
     return this;
   }
@@ -316,7 +379,7 @@ export class CheckoutPage {
     this.waitForShippingQuote();
     this.waitForCheckoutIdle();
 
-    cy.get(this.sel.addressToggle).first().click({ force: true });
+    cy.get(this.sel.addressToggle).first().click({ force: this.force });
     // VERIFIED LIVE: the menu is not in the DOM until the toggle is clicked.
     cy.get(this.sel.addressDropdownMenu, { timeout: 15000 }).should('be.visible').then(($menu) => {
       // Count logged every run so the shared account can be watched: it must not GROW run over
@@ -332,12 +395,12 @@ export class CheckoutPage {
       expect($entry, 'the "enter a new address" entry is present in the saved-address menu')
         .to.have.length.at.least(1);
       // scrollIntoView because the menu is a 185px scrolling container; force because the Klaviyo
-      // popup is left unblocked fleet-wide and covers elements mid-run.
+      // popup is left unblocked fleet-wide and covers elements mid-run (strict mode drops that).
       cy.wrap($entry.first()).scrollIntoView();
       // Open the suppression window as late as possible and shut it again as soon as the form is
       // up, so it can never cover anything but this one click.
       cy.then(() => { this.switchingAddress = true; });
-      cy.wrap($entry.first()).click({ force: true });
+      cy.wrap($entry.first()).click({ force: this.force });
     });
 
     this.waitForBlankAddressForm();
@@ -368,8 +431,10 @@ export class CheckoutPage {
       if (!$box.is(':checked')) return;
       cy.task('log',
         '[CheckoutPage] "Save this address in my address book" was checked — unchecking it');
-      // force: checkout-js styles the native input away behind its own label.
-      cy.wrap($box).uncheck({ force: true });
+      // force: checkout-js styles the native input away behind its own label. Strict mode taps
+      // that label instead — see tapLabelFor.
+      if (this.strict) this.tapLabelFor($box, false);
+      else cy.wrap($box).uncheck({ force: true });
     });
     cy.get(this.sel.saveAddressCheckbox).should('not.be.checked');
     return this;
@@ -515,13 +580,14 @@ export class CheckoutPage {
       switch (f.type) {
         case 'radio':
         case 'checkbox':
-          cy.get(f.selector).check({ force: true });
+          if (this.strict) cy.get(f.selector).then(($i) => this.tapLabelFor($i, true));
+          else cy.get(f.selector).check({ force: true });
           break;
         case 'select':
           cy.get(f.selector).select(f.value);
           break;
         default:
-          cy.get(f.selector).clear({ force: true }).type(f.value, { force: true });
+          cy.get(f.selector).clear({ force: this.force }).type(f.value, { force: this.force });
       }
     });
     return this;
@@ -537,16 +603,18 @@ export class CheckoutPage {
     // consignment and the carrier quote round-trips), so this needs far more than the 15s
     // defaultCommandTimeout. minShippingOptions doubles as a real assertion: a freight-only product
     // quotes zero options, and this says so in one line instead of timing out on a missing radio.
-    cy.get(this.sel.shippingOptionRadio, { timeout: 60000 })
+    const radio = cy.get(this.sel.shippingOptionRadio, { timeout: 60000 })
       .should('have.length.at.least', this.cfg.minShippingOptions)
-      .first()
-      // force: checkout-js visually replaces the native radio with a styled label.
-      .check({ force: true });
+      .first();
+    // force: checkout-js visually replaces the native radio with a styled label. Strict mode taps
+    // that label instead — see tapLabelFor.
+    if (this.strict) radio.then(($r) => this.tapLabelFor($r, true));
+    else radio.check({ force: true });
     return this;
   }
 
   submitShipping() {
-    cy.get(this.sel.shippingContinue).first().should('not.be.disabled').click({ force: true });
+    cy.get(this.sel.shippingContinue).first().should('not.be.disabled').click({ force: this.force });
     return this;
   }
 
@@ -569,7 +637,7 @@ export class CheckoutPage {
       const $btn = $b.find(this.sel.billingContinue).filter(':visible');
       if (!$btn.length) return;
       cy.task('log', '[CheckoutPage] billing step is blocking — continuing through it');
-      cy.wrap($btn.first()).should('not.be.disabled').click({ force: true });
+      cy.wrap($btn.first()).should('not.be.disabled').click({ force: this.force });
     });
     return this;
   }
@@ -595,6 +663,51 @@ export class CheckoutPage {
     cy.get(`${this.sel.paymentStep}.${this.sel.activeStepClass}`, { timeout: 60000 })
       .should('exist');
     cy.get(this.sel.paymentSubmit, { timeout: 30000 }).should('be.visible');
+    return this;
+  }
+
+  /**
+   * Fails unless the element at the centre of `selector`'s first match is that element or
+   * something inside it — i.e. a tap there would reach it.
+   *
+   * Scrolled to the CENTRE of the viewport first, natively, NOT with cy.scrollIntoView(). That
+   * command aligns the element to the TOP edge, which on these mobile checkouts puts it underneath
+   * the sticky header — measured on BESTUS and BESTCA (Oct 1 2026), where it reported a header `<p>`
+   * covering labels that were perfectly tappable where a user would actually see them. Centring is
+   * also what the suite's scrollBehavior:'center' does before every real click.
+   *
+   * Retried by `should`, so a transient overlay (a spinner mid-render) has time to clear, while a
+   * permanent one fails with the culprit named.
+   */
+  assertNotCovered(selector, what) {
+    cy.get(selector).first().then(($el) => { $el[0].scrollIntoView({ block: 'center', inline: 'center' }); });
+    cy.get(selector).first().should(($el) => {
+      const el = $el[0];
+      const r = el.getBoundingClientRect();
+      const top = el.ownerDocument.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      const text = top ? (top.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60) : '';
+      const name = top
+        ? `<${top.tagName.toLowerCase()}${top.id ? `#${top.id}` : ''}` +
+          `${typeof top.className === 'string' && top.className ? `.${top.className.trim().split(/\s+/)[0]}` : ''}>` +
+          `${text ? ` ("${text}")` : ''}`
+        : 'nothing (it is off-screen)';
+      expect(top && (top === el || el.contains(top)),
+        `the centre of ${what} is hit-testable, but ${name} is on top of it`)
+        .to.equal(true);
+    });
+  }
+
+  /**
+   * Asserts that nothing is sitting on top of the "Place Order" button — WITHOUT clicking it.
+   *
+   * `be.visible` (assertPaymentStep) is not enough on a phone: Cypress's visibility check ignores
+   * whether another element overlaps the button, and that overlap (a sticky bar, a popup) is the
+   * classic mobile-only checkout defect. Every other control in the funnel gets this check for
+   * free from an un-forced click in strict mode; this is the one control the suite must never
+   * click, so it is checked by hit-testing its centre point instead.
+   */
+  assertPaymentSubmitTappable() {
+    this.assertNotCovered(this.sel.paymentSubmit, 'the Place Order button');
     return this;
   }
 

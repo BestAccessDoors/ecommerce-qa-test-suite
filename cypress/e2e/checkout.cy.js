@@ -1,4 +1,5 @@
-import { makeConsoleErrorSpy, isToleratedAppError } from '../support/checks.js';
+import { makeConsoleErrorSpy, isToleratedAppError, assertNoHorizontalOverflow } from '../support/checks.js';
+import { PHONES } from '../support/devices.js';
 import { CheckoutPage } from '../support/pages/CheckoutPage.js';
 import { checkoutCredentials, NO_CHECKOUT_CREDENTIALS } from '../support/utils/checkoutCredentials.js';
 import { isPlaceOrder, NOT_ARMED } from '../support/utils/orderGuard.js';
@@ -12,6 +13,10 @@ const site = getStore();
 const checkout = checkoutConfig(); // null on stores that carry "checkout": null
 const creds = checkout ? checkoutCredentials() : null;
 const pdpSel = pdpSelectors();
+// The one phone the mobile checkout test runs on: the most common real width in the store traffic
+// (iOS leads Android ~2:1 — see devices.js). One viewport, not the whole matrix, because every
+// device is a further live sign-in + cart on a shared QA account for a layout that is width-driven.
+const MOBILE = PHONES.find((p) => p.name.startsWith('iPhone 15'));
 
 /**
  * The customer purchase funnel, driven on the LIVE storefront: add to cart -> /checkout -> sign in
@@ -38,6 +43,9 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
   // where checkout is null — turning a clean "[skipped: not configured for <CODE>]" into a
   // spec-load crash. Every dereference below therefore sits inside a hook or an it().
   const page = new CheckoutPage();
+  // Strict mode = no `force` anywhere, so a control a phone user could not tap fails the test
+  // instead of being clicked through. Used only by the mobile test; see CheckoutPage's constructor.
+  const mobilePage = new CheckoutPage(undefined, undefined, { strict: true });
   let persona;
   let consoleErrors;
   // Physical line-item count captured right after Add to Cart, used as the baseline for the
@@ -195,8 +203,14 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
    * the console-error assertion at whichever funnel happened to run last. Each caller keeps its own.
    *
    * @param {number} total — how many steps the CALLER has, purely for the breadcrumb denominator.
+   * @param {{width:number,height:number}} [viewport] — when given, the whole funnel runs at that
+   *   size. It is applied BEFORE the first cy.visit because the theme and checkout-js choose their
+   *   layout from the width at load time; resizing afterwards would test a desktop layout squeezed
+   *   into a small window. Omitted by both desktop callers, which keep the 1920x1080 default.
+   * @param {CheckoutPage} [pg] — the page object to drive. The mobile caller passes `mobilePage`
+   *   (strict, no `force`); everyone else gets the ordinary one.
    */
-  function runFunnelToPayment(total) {
+  function runFunnelToPayment(total, viewport, pg = page) {
     // Reset the carry-over state explicitly. These are describe-scoped (the afterEach and the
     // console test read them), so on a retry they still hold the failed attempt's values — and a
     // stale cart id is worse than an absent one, because it addresses a real-looking resource that
@@ -220,6 +234,7 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
     clearAllCarts('before-cleanup');
     cy.clearCookies();
     cy.clearLocalStorage();
+    if (viewport) cy.viewport(viewport.width, viewport.height);
 
     // 2/6 — add the configured product. A deterministic slug, NOT pickRandom(): this flow needs a
     // product that is priced, in stock, option-free and parcel-shippable every single run, which
@@ -228,10 +243,13 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
     cy.task('log', `[checkout.cy.js] 2/${total} product under test: ${pdpUrl}`);
     cy.log(`**Checkout product:** ${pdpUrl}`);
     cy.visit(pdpUrl);
+    // `force` only on the desktop funnel: with a viewport given the run is the mobile one, where a
+    // covered qty box or Add to Cart button is the finding rather than something to click through.
+    const force = !viewport;
     if (checkout.quantity > 1) {
-      cy.get(pdpSel.qtyInput).clear({ force: true }).type(String(checkout.quantity), { force: true });
+      cy.get(pdpSel.qtyInput).clear({ force }).type(String(checkout.quantity), { force });
     }
-    cy.get(pdpSel.addToCart).should('be.visible').and('not.be.disabled').click({ force: true });
+    cy.get(pdpSel.addToCart).should('be.visible').and('not.be.disabled').click({ force });
     waitForCarts(1);
     // Record what the cart actually looks like straight after Add to Cart, so the post-sign-in
     // check can assert "unchanged" rather than a hardcoded count. Also names the line items in the
@@ -250,14 +268,14 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
     // 3/6 — checkout. VERIFIED LIVE: /checkout 302s to /cart.php when the cart is empty, so the
     // waitForCarts(1) above is load-bearing, not decorative.
     cy.task('log', `[checkout.cy.js] 3/${total} opening checkout`);
-    page.visit();
+    pg.visit();
     cy.location('pathname').should('not.include', 'cart.php');
-    page.assertCustomerStep();
+    pg.assertCustomerStep();
 
     // 4/6 — sign in.
     cy.task('log', `[checkout.cy.js] 4/${total} signing in`);
-    page.signIn(creds.email, creds.password);
-    page.assertSignedIn(creds.email);
+    pg.signIn(creds.email, creds.password);
+    pg.assertSignedIn(creds.email);
     // Signing in MERGES any cart persisted against the account into the guest cart, so a cart left
     // behind by an earlier run that died before its after() hook would arrive here as extra line
     // items — and the shipping quote, and the rest of the flow, would then be testing a different
@@ -279,24 +297,24 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
     // without anyone having to open the video: the address fill and the carrier quote fail for
     // completely different reasons and are fixed in different places.
     cy.task('log', `[checkout.cy.js] 5a/${total} shipping address`);
-    page.fillShippingAddress(persona);
+    pg.fillShippingAddress(persona);
     // The spec types its own address rather than accepting whichever one the shared QA account has
     // saved, so this is what proves the typing actually took. checkout-js has been seen to revert
     // to a saved address SILENTLY after an internal error — without this guard such a run stays
     // green while quoting shipping for a stranger's address.
-    page.assertAddressHeld(persona);
+    pg.assertAddressHeld(persona);
 
     // 5b/6 — shipping method.
     cy.task('log', `[checkout.cy.js] 5b/${total} shipping method`);
-    page.selectShippingMethod();
-    page.submitShipping();
+    pg.selectShippingMethod();
+    pg.submitShipping();
     // The server's view of the address, not the form's: the collapsed shipping step renders the
     // postcode the quote was actually made against.
-    page.assertShippingSummary(persona);
+    pg.assertShippingSummary(persona);
     // Normally a no-op: BigCommerce's billing step is skipped because #sameAsBilling is checked by
     // default (on BESTUS the billing continue button is not even rendered). Only acts if this
     // store's checkout actually stops there.
-    page.continueBillingIfBlocking();
+    pg.continueBillingIfBlocking();
 
     return spy;
   }
@@ -418,6 +436,46 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
       ? 'checkout console noise not yet triaged for this store (checkout.consoleIgnore is null)'
       : NO_CHECKOUT_CREDENTIALS
   );
+
+  /**
+   * The same funnel at a phone viewport, driven by a STRICT page object (no `force`).
+   *
+   * The backend is identical on mobile; what differs is layout, so the value here is whether a
+   * phone user can physically operate every control on the way to payment. That is why this does
+   * not re-assert the checkout resource's totals (the desktop test owns them) or the console (also
+   * the desktop test's), and instead adds only mobile-specific signals: the viewport really
+   * applied, no horizontal overflow on the payment step, and Place Order is not covered.
+   *
+   * DECLARED BELOW the console-error test on purpose: that test reads the spy from the desktop
+   * funnel via the shared `consoleErrors`, and this test discards the spy runFunnelToPayment
+   * returns, so it can never re-point it. Above the armed suite, whose declaration must stay last (see its comment).
+   *
+   * Runs under the suite-wide retries:{runMode:2}. Be aware that a popup which only sometimes
+   * covers a control can fail attempt 1 and pass attempt 2, going green over a real intermittent
+   * problem: read the per-attempt results, not just the final colour.
+   *
+   * CHROMIUM ONLY: strict mode taps styled radios/checkboxes with cypress-real-events' trusted
+   * `realClick` (see CheckoutPage.tapLabelFor), which is CDP-based. Chrome is the default on every
+   * entry point, so this only skips on an explicit `--browser firefox` run.
+   */
+  itIfStore(creds && Cypress.browser.family === 'chromium',
+    'reaches the payment step on a phone without forcing any click', () => {
+    runFunnelToPayment(6, MOBILE, mobilePage);
+
+    cy.task('log',
+      `[checkout.cy.js] 6/6 mobile (${MOBILE.width}x${MOBILE.height}) payment step reached — stopping here`);
+    // Positive control: without it a pass could just mean the viewport call never took effect and
+    // this quietly ran the desktop layout.
+    cy.window().its('innerWidth').should('eq', MOBILE.width);
+
+    mobilePage.assertPaymentStep();
+    cy.location('pathname').should('not.include', 'order-confirmation');
+    mobilePage.assertPaymentOptions();
+    assertNoHorizontalOverflow(MOBILE.width);
+    mobilePage.assertPaymentSubmitTappable();
+  }, creds
+    ? 'needs a trusted (CDP) click for styled radios/checkboxes — Chromium only'
+    : NO_CHECKOUT_CREDENTIALS);
 
   /**
    * The armed suite: runs the same funnel and then actually buys the thing.
