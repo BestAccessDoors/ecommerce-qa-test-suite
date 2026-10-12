@@ -137,6 +137,7 @@
     ]
   },
   "checkout": {
+    "spamProtection": true,
     "path": "/checkout",
     "product": "/8-x-8-fire-rated-insulated-access-panel/",
     "quantity": 1,

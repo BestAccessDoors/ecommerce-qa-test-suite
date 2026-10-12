@@ -204,6 +204,7 @@
     }
   },
   "checkout": {
+    "spamProtection": true,
     "path": "/checkout",
     "product": "/18-x-36-drywall-access-door/",
     "quantity": 1,

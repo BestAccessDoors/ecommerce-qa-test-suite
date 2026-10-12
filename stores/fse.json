@@ -209,6 +209,7 @@
     }
   },
   "checkout": {
+    "spamProtection": true,
     "path": "/checkout",
     "product": "/24-x-24-fire-rated-insulated-access-panel-best-access-doors/",
     "quantity": 1,

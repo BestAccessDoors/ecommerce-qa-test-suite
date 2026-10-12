@@ -202,6 +202,7 @@
     }
   },
   "checkout": {
+    "spamProtection": true,
     "path": "/checkout",
     "product": "/14-x-14-panel-de-acceso-plastico-al-ras/",
     "quantity": 1,

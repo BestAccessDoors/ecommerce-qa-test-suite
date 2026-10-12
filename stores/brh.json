@@ -185,6 +185,7 @@
     }
   },
   "checkout": {
+    "spamProtection": true,
     "path": "/checkout",
     "product": "/30-x-36-galvanized-steel-single-leaf-hatch-milcor/",
     "quantity": 1,
