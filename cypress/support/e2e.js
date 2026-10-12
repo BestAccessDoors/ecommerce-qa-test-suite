@@ -184,12 +184,26 @@ afterEach(() => {
 // frames) — so trim, "$ is not a function", and any further ready-callback bug in this same theme
 // are all covered without masking an unrelated error (which would lack that jQuery+host stack).
 // Remove once BRH fixes its theme scripts.
-const isBrhReadyThrow = (e) => {
-  const stack = (e && e.stack) || '';
-  return /code\.jquery\.com/.test(stack) && /bestroofhatches\.com/.test(stack);
-};
+//
+// BESTUS (Oct 12 2026) has the same shape: a new inline PDP script's `updateWeightText()` runs in
+// $(function(){…}) and does `$('#weightText').data('product-weight').split(' ')`, which throws
+// "Cannot read properties of undefined (reading 'split')" on every PDP lacking #weightText. Its
+// jQuery is served from cdn11.bigcommerce.com rather than code.jquery.com, so the signature is the
+// function name plus the host. See stores/bestus.json _notes; remove once BESTUS adds a guard.
+const READY_THROW_SIGNATURES = [
+  {
+    host: /bestroofhatches\.com/,
+    matches: (stack) => /code\.jquery\.com/.test(stack) && /bestroofhatches\.com/.test(stack),
+  },
+  {
+    host: /bestaccessdoors\.com/,
+    matches: (stack) => /\bupdateWeightText\b/.test(stack) && /bestaccessdoors\.com/.test(stack),
+  },
+];
 Cypress.on('window:before:load', (win) => {
-  if (!/bestroofhatches\.com/.test(win.location.hostname)) return;
+  const signature = READY_THROW_SIGNATURES.find(({ host }) => host.test(win.location.hostname));
+  if (!signature) return;
+  const isReadyThrow = (e) => signature.matches((e && e.stack) || '');
   const nativeSetTimeout = win.setTimeout;
   win.setTimeout = function (handler, timeout, ...rest) {
     if (typeof handler !== 'function') {
@@ -199,7 +213,7 @@ Cypress.on('window:before:load', (win) => {
       try {
         return handler.apply(this, arguments);
       } catch (e) {
-        if (isBrhReadyThrow(e)) return undefined;
+        if (isReadyThrow(e)) return undefined;
         throw e;
       }
     };
@@ -220,9 +234,9 @@ Cypress.on('window:before:load', (win) => {
 //  2. A real, attributable error (message + stack) whose stack traces back to a known third-party
 //     host blockThirdParty() stubs at the network layer (THIRD_PARTY_HOSTS).
 //  3. An error matching a KNOWN_BUGGY_SCRIPTS entry — either by stack (a vendor script we
-//     deliberately leave running for real, e.g. Zoho SalesIQ) or by message (a same-origin script
-//     loaded as a raw external <script src>, e.g. BESTUS's tracking_code.js, whose own parse-time
-//     SyntaxError comes back with no stack at all, same redacted shape as case 1).
+//     deliberately leave running for real, e.g. Zoho SalesIQ, or a first-party file with a known
+//     bug, e.g. BESTUS's tracking_code.js) or by message (an error with no usable stack, e.g. a
+//     same-origin script loaded as a raw external <script src> that fails to parse).
 // Anything else — including any exception with a real, attributable stack that isn't one of our
 // known vendors/defects — is treated as first-party and allowed to fail the test as normal.
 //
@@ -236,8 +250,8 @@ Cypress.on('window:before:load', (win) => {
 // makeConsoleErrorSpy fetch wrapper used to `return Promise.reject(err)` from its .catch, which
 // turned Klaviyo's fire-and-forget "Failed to fetch" telemetry rejection into a spec-frame
 // rejection that killed pdp.mobile's before-all hook despite the matching KNOWN_BUGGY_SCRIPTS entry.
-// So: support-file code that runs inside the AUT (the fetch wrapper in checks.js, the BRH
-// setTimeout wrap above) must handle its own async failures AT THE SOURCE and must never hand back
+// So: support-file code that runs inside the AUT (the fetch wrapper in checks.js, the
+// BRH/BESTUS setTimeout wrap above) must handle its own async failures AT THE SOURCE and must never hand back
 // a promise it leaves in a rejected state — this handler cannot rescue it.
 Cypress.on('uncaught:exception', (err) => {
   Cypress.log({ name: 'Uncaught Error', message: err.message });

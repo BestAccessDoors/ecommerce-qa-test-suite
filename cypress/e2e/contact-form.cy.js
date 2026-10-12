@@ -25,7 +25,7 @@ describeIfStore(contactForm, 'Contact Us form', () => {
         page.visit().scrollToForm();
         cy.fillPersona(page, persona, email);
         page.submit();
-        cy.wait('@submit').its('response.statusCode').should('be.oneOf', [200, 302]);
+        cy.expectZohoAccepted();
       });
     });
 
@@ -52,7 +52,7 @@ describeIfStore(contactForm, 'Contact Us form', () => {
         cy.fillPersona(page, persona, email);
         page.attachFile('files/sample.pdf');
         page.submit();
-        cy.wait('@submit').its('response.statusCode').should('be.oneOf', [200, 302]);
+        cy.expectZohoAccepted();
       });
     });
   });
