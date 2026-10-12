@@ -173,6 +173,7 @@
     "_popularNote": "pdp.popular and products.known are independent lists and need not overlap; the 22-x-30 popular URL was verified live (200) July 2 2026."
   },
   "checkout": {
+    "spamProtection": true,
     "path": "/checkout",
     "product": "/16-x-16-universal-flush-access-door-with-hidden-flange-acudor/",
     "quantity": 1,

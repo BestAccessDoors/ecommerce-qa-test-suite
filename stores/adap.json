@@ -177,6 +177,7 @@
     }
   },
   "checkout": {
+    "spamProtection": true,
     "path": "/checkout",
     "product": "/6-x-6-flush-access-door-with-concealed-latch-and-drywall-flange/",
     "quantity": 1,

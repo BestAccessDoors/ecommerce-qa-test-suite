@@ -12,6 +12,16 @@ import {
 const site = getStore();
 const checkout = checkoutConfig(); // null on stores that carry "checkout": null
 const creds = checkout ? checkoutCredentials() : null;
+// BigCommerce checkout spam protection (reCAPTCHA) holds the payment step behind a check an
+// automated browser cannot pass: with the suite's /recaptcha/ stub the step spins forever, and with
+// the real script Google serves an image challenge. Turned on fleet-wide after a bot attack (Oct 12
+// 2026). `runnable` replaces `creds` as the gate on every test below, so the skip names the real
+// cause instead of a 60s timeout. Credentials are still resolved; the funnel just never starts.
+const SPAM_PROTECTED = 'checkout spam protection (reCAPTCHA) is on — automation cannot pass it '
+  + '(checkout.spamProtection)';
+const spamBlocked = Boolean(checkout && checkout.spamProtection);
+const runnable = Boolean(creds) && !spamBlocked;
+const NOT_RUNNABLE = spamBlocked ? SPAM_PROTECTED : NO_CHECKOUT_CREDENTIALS;
 const pdpSel = pdpSelectors();
 // The one phone the mobile checkout test runs on: the most common real width in the store traffic
 // (iOS leads Android ~2:1 — see devices.js). One viewport, not the whole matrix, because every
@@ -32,7 +42,8 @@ const MOBILE = PHONES.find((p) => p.name.startsWith('iPhone 15'));
  *
  * GATE LAYERS, each saying something different and only some of them actionable:
  *   1. describeIfStore(checkout, …)  -> "[skipped: not configured for <CODE>]" — store not onboarded
- *   2. itIfStore(creds, …, reason)   -> "[skipped: checkout credentials not on this machine …]"
+ *   2. itIfStore(runnable, …, reason) -> "[skipped: checkout spam protection (reCAPTCHA) is on …]"
+ *      or "[skipped: checkout credentials not on this machine …]"
  *   3. itIfStore(… isPlaceOrder(), …, NOT_ARMED) -> "[skipped: order placement not armed …]"
  * (1) is a fact about the store, (2) about the machine, (3) about the command — so they read
  * differently on purpose.
@@ -319,7 +330,7 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
     return spy;
   }
 
-  itIfStore(creds, 'adds a product, signs in, and reaches the payment step', () => {
+  itIfStore(runnable, 'adds a product, signs in, and reaches the payment step', () => {
     consoleErrors = runFunnelToPayment(6);
 
     // 6/6 — STOP. Assert the payment step rendered; never submit it.
@@ -413,7 +424,7 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
       // (The proof that selectShippingMethod()'s radio reached the server rather than only the DOM
       // now lives above, with the shipping-cost check it shares a source with.)
     });
-  }, NO_CHECKOUT_CREDENTIALS);
+  }, NOT_RUNNABLE);
 
   /**
    * Reads closure state set by the flow test above. That works under testIsolation:true because
@@ -429,12 +440,12 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
    * store config rather than checks.js keeps it per-store and data-driven.
    */
   itIfStore(
-    creds && checkout.consoleIgnore !== null,
+    runnable && checkout.consoleIgnore !== null,
     'reaches the payment step without console errors',
     () => { consoleErrors.assertClean(); },
-    creds
+    runnable
       ? 'checkout console noise not yet triaged for this store (checkout.consoleIgnore is null)'
-      : NO_CHECKOUT_CREDENTIALS
+      : NOT_RUNNABLE
   );
 
   /**
@@ -458,7 +469,7 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
    * `realClick` (see CheckoutPage.tapLabelFor), which is CDP-based. Chrome is the default on every
    * entry point, so this only skips on an explicit `--browser firefox` run.
    */
-  itIfStore(creds && Cypress.browser.family === 'chromium',
+  itIfStore(runnable && Cypress.browser.family === 'chromium',
     'reaches the payment step on a phone without forcing any click', () => {
     runFunnelToPayment(6, MOBILE, mobilePage);
 
@@ -473,9 +484,9 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
     mobilePage.assertPaymentOptions();
     assertNoHorizontalOverflow(MOBILE.width);
     mobilePage.assertPaymentSubmitTappable();
-  }, creds
+  }, runnable
     ? 'needs a trusted (CDP) click for styled radios/checkboxes — Chromium only'
-    : NO_CHECKOUT_CREDENTIALS);
+    : NOT_RUNNABLE);
 
   /**
    * The armed suite: runs the same funnel and then actually buys the thing.
@@ -490,7 +501,7 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
    *   1. checkout.placeOrder (describe) — committed per-store opt-in. NO env var can set it, which
    *      is what stops one armed command from ordering on every onboarded store when run-all.js
    *      fans a single parent env out to all nine.
-   *   2. creds (it) — the machine holds the QA sign-in.
+   *   2. runnable (it) — the machine holds the QA sign-in and checkout.spamProtection is off.
    *   3. isPlaceOrder() (it) — the CLI double gate, re-asserted from the parent process env in
    *      cypress.config.js's setupNodeEvents so cypress.env.json / CYPRESS_* / --env cannot arm it.
    *
@@ -514,7 +525,7 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
     'Order placement (real order, paid from store credit)',
     { retries: 0 },
     () => {
-      itIfStore(creds && isPlaceOrder(), 'places an order and reaches the order confirmation page', () => {
+      itIfStore(runnable && isPlaceOrder(), 'places an order and reaches the order confirmation page', () => {
         runFunnelToPayment(7);
 
         // 6/7 — payment step, same assertions as the unarmed path.
@@ -535,7 +546,7 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
         cy.task('log',
           '[checkout.cy.js] order placed — "after-cleanup: deleted 0 cart(s)" below is EXPECTED ' +
           '(BigCommerce consumes the cart when the order is created)');
-      }, creds ? NOT_ARMED : NO_CHECKOUT_CREDENTIALS);
+      }, runnable ? NOT_ARMED : NOT_RUNNABLE);
     }
   );
 });
