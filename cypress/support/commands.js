@@ -1,5 +1,5 @@
 import { uniqueEmail } from './utils/uniqueEmail.js';
-import { setupZohoIntercept, isLiveSubmit } from './utils/zohoIntercept.js';
+import { setupZohoIntercept, isLiveSubmit, zohoRejection } from './utils/zohoIntercept.js';
 import { getStore } from './store.js';
 
 Cypress.Commands.add('uniqueEmail', () => {
@@ -34,6 +34,20 @@ Cypress.Commands.add('fillPersona', (formPage, persona, email) => {
 
 Cypress.Commands.add('interceptZoho', (alias, urlPattern) => {
   setupZohoIntercept(alias, urlPattern, isLiveSubmit());
+});
+
+/**
+ * Waits for a Zoho form POST and asserts Zoho ACCEPTED it: a 200/302 status, and a body
+ * that is not Zoho's "Error Occurred!" rejection page (see zohoRejection). In stub mode the
+ * body is our own fake thank-you, so only the status check has teeth; in live mode this is
+ * what catches a server-side rejection the status code alone reports as success.
+ */
+Cypress.Commands.add('expectZohoAccepted', (alias = 'submit') => {
+  cy.wait(`@${alias}`).then(({ response }) => {
+    expect(response.statusCode).to.be.oneOf([200, 302]);
+    const rejection = zohoRejection(response.body);
+    expect(rejection, `Zoho rejected the submission: ${rejection}`).to.be.null;
+  });
 });
 
 /**

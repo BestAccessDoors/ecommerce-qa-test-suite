@@ -172,8 +172,8 @@ export function blockThirdParty() {
 // scripts still run for real, we just don't want their known bug to fail unrelated tests.
 // Each entry matches by `stackPattern` (when the browser gives a real, attributable stack) or
 // `messagePattern` (for a browser-redacted error with no stack at all — same-origin scripts can
-// still lose their stack this way when loaded as a raw external <script src>, e.g. the
-// tracking_code.js entry below). An entry may also carry an optional `store` field (e.g. 'brh')
+// still lose their stack this way when loaded as a raw external <script src>, as BESTUS's
+// tracking_code.js once did). An entry may also carry an optional `store` field (e.g. 'brh')
 // which restricts it to that one store — used when a message is too generic to suppress fleet-wide
 // (e.g. a store-specific theme bug) without masking real errors elsewhere.
 export const KNOWN_BUGGY_SCRIPTS = [
@@ -185,16 +185,18 @@ export const KNOWN_BUGGY_SCRIPTS = [
     stackPattern: /static\.zohocdn\.com/,
   },
   {
-    // BESTUS's /content/assets/js/tracking_code.js (loaded only on /request-a-quote/) is
-    // deployed with literal <script>/</script> wrapper tags still inside the file content — a
-    // Zoho UTM/lead-tracking snippet meant for inline embedding, mistakenly saved as a
-    // standalone external file. Loaded via <script src>, the browser parses the raw text as JS
-    // and chokes on the leading '<', throwing this exact SyntaxError with no stack at all (same
-    // redacted shape as a cross-origin error, even though it's same-origin) — so there's no
-    // stack/host to match on, only this message. Confirmed low-severity: the real Zoho
-    // form/submission is unaffected, only this script's own UTM-attribution cookie logic never
-    // runs on that page (see stores/bestus.json _notes for the fix).
-    messagePattern: /Unexpected token '<'/,
+    // BESTUS's /content/assets/js/tracking_code.js — Zoho's stock UTM/lead-tracking snippet.
+    // Until ~Oct 2026 it was deployed with literal <script> wrapper tags inside the file and died
+    // at parse time (SyntaxError: Unexpected token '<', matched by message). That was fixed and
+    // the script is now loaded site-wide (PDP, /checkout), so it actually runs — and throws
+    // `zf_form_act.indexOf is not a function` from zfutm_DHtmlSprt() on its window 'load'. DOM
+    // clobbering: it reads `form.action` for every form in document.forms, and BigCommerce's
+    // add-to-cart form carries <input name="action" value="add">, so `form.action` is that
+    // input element, not a string. Real impact: the loop aborts, so UTM/gclid values are never
+    // copied into any later Zoho form (e.g. the PDP product-info lead form). Fix is site-side:
+    // `getAttribute('action')` instead of `.action`. Matched by STACK — the error now carries
+    // real frames in this one file. See stores/bestus.json _notes (Oct 12 2026).
+    stackPattern: /bestaccessdoors\.com\/content\/assets\/js\/tracking_code\.js/,
   },
   {
     // Meta Pixel (fbq) / Segment (analytics) / gtag / TikTok (ttq) globals are defined by

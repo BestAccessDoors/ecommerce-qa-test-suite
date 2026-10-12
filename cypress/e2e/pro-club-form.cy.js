@@ -33,7 +33,7 @@ describeIfStore(proClubForm, 'Pro Club Application form', () => {
         page.visit().scrollToForm();
         cy.fillPersona(page, persona, email);
         page.submit();
-        cy.wait('@submit').its('response.statusCode').should('be.oneOf', [200, 302]);
+        cy.expectZohoAccepted();
       });
     });
 

@@ -33,7 +33,7 @@ describeIfStore(quoteForm, 'Request a Quote form', () => {
         page.submit();
         // Assert on the intercepted response — the page navigates to Zoho after submit
         // so DOM assertions are not possible here in stub mode.
-        cy.wait('@submit').its('response.statusCode').should('be.oneOf', [200, 302]);
+        cy.expectZohoAccepted();
       });
     });
 
