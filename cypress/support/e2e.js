@@ -260,3 +260,19 @@ Cypress.on('uncaught:exception', (err) => {
   return !isToleratedAppError(err);
 });
 
+
+// SITE BLOCKED HINT. When a store's bot protection (ADAP's Cloudflare challenge, Oct 2026) refuses
+// this computer, cy.visit fails with "403: Forbidden" and every spec dies in its before-all hook,
+// which reads as dozens of broken tests. Append a plain-words hint to that one error shape so it is
+// visible right where the failure is, in the terminal and in the failure screenshot. Matching is
+// the same as scripts/siteBlocked.js, which writes the fuller explanation into the run summary. The
+// error is always re-thrown, so the test still fails exactly as before.
+Cypress.on('fail', (err) => {
+  if (/cy\.visit\(\)`? failed trying to load/.test(err.message) && /403: Forbidden/.test(err.message)) {
+    err.message +=
+      '\n\nSITE BLOCKED? A 403 on page load almost always means the store\'s bot protection ' +
+      '(Cloudflare) is blocking this computer\'s IP address. It is not a broken test. See the ' +
+      '"SITE BLOCKED" note in the run summary and the _notes in stores/' + Cypress.env('STORE') + '.json.';
+  }
+  throw err;
+});

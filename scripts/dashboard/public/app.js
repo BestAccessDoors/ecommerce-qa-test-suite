@@ -156,6 +156,13 @@
       `${t.totalPassed || 0} passed · ${t.totalPending || 0} pending · ${summary.duration || ''}`;
     rec.detailEl.appendChild(totals);
 
+    // The site refused this computer (bot protection / IP block): say so above the failure list.
+    if (summary.siteBlocked && Array.isArray(summary.siteBlocked.message)) {
+      const note = el('div', 'site-blocked');
+      note.textContent = summary.siteBlocked.message.join('\n');
+      rec.detailEl.appendChild(note);
+    }
+
     for (const fs of summary.failedSpecs || []) {
       const block = el('div', 'failed-spec');
       const title = el('div', 'failed-spec-title');
