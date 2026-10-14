@@ -12,6 +12,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { detectSiteBlock, siteBlockedLines } = require('./siteBlocked');
 
 const LOG_DIR = path.join(__dirname, '..', 'results');
 const LOG_FILE = path.join(LOG_DIR, 'test-results.log');
@@ -89,6 +90,14 @@ function appendRunLog(results, store) {
       lines.push(`  ${specOutcome}  ${spec.padEnd(40)} ${describeStats(stats)}`);
     }
 
+    // A blocked site makes every spec fail on its first page load, which reads as dozens of broken
+    // tests. Say what it really is, in the log and loudly on the console (the dashboard log pane).
+    const siteBlock = detectSiteBlock(runs);
+    if (siteBlock) {
+      lines.push(SUBRULE);
+      for (const l of siteBlockedLines(store, siteBlock.count)) lines.push(`  ${l}`);
+    }
+
     lines.push(RULE);
     lines.push('');
 
@@ -96,6 +105,10 @@ function appendRunLog(results, store) {
     fs.appendFileSync(LOG_FILE, lines.join('\n') + '\n', 'utf8');
     // eslint-disable-next-line no-console
     console.log(`\n📝 Run logged to results/test-results.log (${outcome})`);
+    if (siteBlock) {
+      // eslint-disable-next-line no-console
+      console.log(`\n${'!'.repeat(60)}\n${siteBlockedLines(store, siteBlock.count).join('\n')}\n${'!'.repeat(60)}\n`);
+    }
 
     // Drop a sidecar so run-all.js can aggregate failures across stores.
     writeSummarySidecar(store, {
@@ -104,6 +117,10 @@ function appendRunLog(results, store) {
       durationMs: results.totalDuration ?? 0,
       duration: formatDuration(results.totalDuration),
       totals: { totalTests, totalPassed, totalFailed, totalPending, totalSkipped },
+      // null, or { count, message } — read by run-all.js and the dashboard card.
+      siteBlocked: siteBlock
+        ? { count: siteBlock.count, message: siteBlockedLines(store, siteBlock.count) }
+        : null,
       failedSpecs: runs
         .filter((run) => (run.stats && run.stats.failures) > 0)
         .map((run) => ({

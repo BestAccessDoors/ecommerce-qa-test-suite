@@ -130,6 +130,10 @@ for (const { store, ok, minutes } of results) {
   const color = storeColor(s);
   const totals = s ? `${s.totals.totalFailed} failed / ${s.totals.totalTests}` : '(no data)';
   push(`  ${ok ? '✔ PASS' : '✘ FAIL'}  ${store.padEnd(10)} ${String(minutes).padStart(5)} min   ${totals}`, color);
+  // Lead with the reason when the site refused this computer, ahead of the long test list it caused.
+  if (s && s.siteBlocked) {
+    for (const l of s.siteBlocked.message) push(`           ⚠ ${l}`, color);
+  }
   if (s && s.failedSpecs.length) {
     for (const spec of s.failedSpecs) {
       push(`           ↳ ${spec.spec} (${spec.failures})`, color);

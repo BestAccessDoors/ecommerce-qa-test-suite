@@ -202,6 +202,17 @@ button.danger:disabled { background: var(--panel-2); color: var(--muted); cursor
 }
 .failed-spec-title { color: var(--fail); font-weight: 600; word-break: break-all; }
 .failed-test { color: var(--muted); margin-left: 0.5rem; }
+/* "the website refused this computer" explanation, shown above the failure list */
+.site-blocked {
+  border: 1px solid var(--orange);
+  border-left-width: 4px;
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .artifacts { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.4rem; }
 .video-wrap { margin-top: 0.5rem; }
 .video-wrap video { width: 100%; border-radius: 8px; background: #000; }
