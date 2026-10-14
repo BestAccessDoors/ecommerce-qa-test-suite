@@ -642,9 +642,41 @@ export function assertNoHorizontalOverflow(maxWidth) {
 }
 
 /**
+ * True when the theme's CSS lays `el` out on screen: a non-empty box (display:none on
+ * it or any ancestor empties it), visibility:visible, no opacity:0 on it or an ancestor,
+ * not parked off-canvas, and not clipped away by an overflow-hiding ancestor.
+ *
+ * Deliberately ignores whatever is painted ON TOP of `el`. Cypress's :visible does not:
+ * it counts a position:fixed element as hidden whenever anything overlaps it. ADAP's
+ * mobile header is fixed, and since early Oct 2026 its Klaviyo signup popup covers the
+ * whole 810px tablet viewport at the same z-index, so :visible matched none of the
+ * header's controls and the touch-target test timed out on a header that was fine.
+ * Klaviyo is store-functional and deliberately left loaded (see blockThirdParty()).
+ */
+function isLaidOutOnScreen(el) {
+  const doc = el.ownerDocument;
+  const win = doc.defaultView;
+  const r = el.getBoundingClientRect();
+  if (r.width <= 0 || r.height <= 0) return false;
+  const cs = win.getComputedStyle(el);
+  if (cs.visibility !== 'visible' || Number(cs.opacity) === 0) return false;
+  if (r.right <= 0 || r.left >= win.innerWidth) return false;
+  for (let p = el.parentElement; p && p !== doc.body; p = p.parentElement) {
+    const ps = win.getComputedStyle(p);
+    if (Number(ps.opacity) === 0) return false;
+    if (ps.overflowX === 'visible' && ps.overflowY === 'visible') continue;
+    const pr = p.getBoundingClientRect();
+    if (r.right <= pr.left || r.left >= pr.right || r.bottom <= pr.top || r.top >= pr.bottom) return false;
+  }
+  return true;
+}
+
+/**
  * Asserts the tallest visible interactive header element is at least `minHeight` px.
  * Uses Math.max (not .first()) because DOM order puts small utility/skip links first;
  * the real question is whether there is at least one prominently-sized tappable element.
+ * "Visible" means laid out on screen, not uncovered — see isLaidOutOnScreen(). An
+ * overlay is a separate concern from how big the header's tap targets are.
  */
 export function assertMaxTouchTarget(minHeight) {
   // Whichever header the theme shows at this width (mobile or desktop) is the
@@ -654,12 +686,15 @@ export function assertMaxTouchTarget(minHeight) {
     .map((h) => `${h} a[href], ${h} button`)
     .join(', ');
   cy.get(selector)
-    .filter(':visible')
-    .filter((i, el) => el.getBoundingClientRect().height > 0)
+    .filter((i, el) => isLaidOutOnScreen(el))
     .should('have.length.at.least', 1)
     .then(($els) => {
-      const maxHeight = Math.max(...[...$els].map((el) => el.getBoundingClientRect().height));
-      expect(maxHeight, 'Tallest header interactive element height').to.be.gte(minHeight);
+      const tallest = [...$els].reduce((a, b) =>
+        b.getBoundingClientRect().height > a.getBoundingClientRect().height ? b : a);
+      const cls = String(tallest.className).trim().split(/\s+/).slice(0, 2).filter(Boolean).join('.');
+      const name = `${tallest.tagName.toLowerCase()}${cls ? '.' + cls : ''}`;
+      expect(tallest.getBoundingClientRect().height, `Tallest header interactive element height (${name})`)
+        .to.be.gte(minHeight);
     });
 }
 
