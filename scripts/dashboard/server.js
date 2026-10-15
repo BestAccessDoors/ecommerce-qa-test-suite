@@ -41,6 +41,7 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 
 const { SUMMARY_DIR } = require('../writeRunLog');
+const { stripArmingEnv } = require('../armingEnv');
 const STORE_NAMES = require('./storeNames');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -58,6 +59,22 @@ const PORT = Number(process.env.DASHBOARD_PORT) || 8420;
 // (no CORS headers are ever sent). Regenerates on every server restart; that's fine for a
 // local, single-operator tool with no persistence requirement.
 const DASHBOARD_TOKEN = crypto.randomBytes(24).toString('hex');
+const DASHBOARD_TOKEN_BUF = Buffer.from(DASHBOARD_TOKEN);
+
+// The token alone is only as strong as the Same-Origin Policy, and DNS rebinding defeats that: a
+// page on evil.example:PORT whose name later re-resolves to 127.0.0.1 is "same-origin" with this
+// server, can read the token out of '/', and can then POST /api/run. Browsers always send the
+// name they resolved in Host, so accepting only our own loopback names closes it. Origin is
+// checked on POST as well (absent is fine: curl and same-origin navigations may omit it).
+const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
+const ALLOWED_ORIGINS = new Set([...ALLOWED_HOSTS].map((h) => `http://${h}`));
+
+// Sent on every response: no framing (clickjacking a "Run selected" click), no MIME sniffing.
+const SECURITY_HEADERS = {
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "frame-ancestors 'none'",
+  'X-Content-Type-Options': 'nosniff',
+};
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -129,7 +146,10 @@ function sendText(res, status, text) {
 
 // Gate for state-changing POST routes — see DASHBOARD_TOKEN above for the rationale.
 function requireToken(req, res) {
-  if (req.headers['x-dashboard-token'] !== DASHBOARD_TOKEN) {
+  const given = Buffer.from(String(req.headers['x-dashboard-token'] || ''));
+  const ok =
+    given.length === DASHBOARD_TOKEN_BUF.length && crypto.timingSafeEqual(given, DASHBOARD_TOKEN_BUF);
+  if (!ok) {
     sendJson(res, 403, { error: 'Missing or invalid dashboard token.' });
     return false;
   }
@@ -138,6 +158,8 @@ function requireToken(req, res) {
 
 // Serve a file, but only if it resolves inside `root` (path-traversal guard).
 function serveFile(res, root, relPath, { range } = {}) {
+  // A decoded %00 passes the inside-root check below but makes fs.stat throw synchronously.
+  if (relPath.includes('\0')) return sendText(res, 400, 'Bad request');
   const resolved = path.resolve(root, relPath);
   if (resolved !== root && !resolved.startsWith(root + path.sep)) {
     return sendText(res, 403, 'Forbidden');
@@ -259,7 +281,9 @@ function killRunTree() {
   if (!currentChild) return false;
   stopRequested = true;
   if (process.platform === 'win32') {
-    spawn('taskkill', ['/pid', String(currentChild.pid), '/T', '/F']);
+    // Absolute path: a bare 'taskkill' is resolved against the cwd (the repo root) before PATH.
+    const taskkill = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe');
+    spawn(taskkill, ['/pid', String(currentChild.pid), '/T', '/F']);
   } else {
     currentChild.kill('SIGKILL');
   }
@@ -322,15 +346,14 @@ function startRun({ stores, specsByStore }) {
     }
   }
 
-  const childEnv = { ...process.env, FORCE_COLOR: '' };
-  delete childEnv.LIVE_SUBMIT; // hard guarantee: dashboard is stub-only
-  delete childEnv.I_KNOW_THIS_IS_LIVE;
-  // Same hard guarantee for order placement: a dashboard run can sign in and build a cart, but it
-  // can never submit an order or spend the QA account's store credit. Deleting these is sufficient
-  // because cypress.config.js re-asserts both from the PARENT process env inside setupNodeEvents,
-  // so a stray cypress.env.json or CYPRESS_-prefixed var cannot arm the child behind our back.
-  delete childEnv.PLACE_ORDER;
-  delete childEnv.I_KNOW_THIS_PLACES_ORDERS;
+  // Hard guarantee: a dashboard run is stub-only (no real Zoho lead) and can never submit an order
+  // or spend the QA account's store credit, though it can sign in and build a cart. Stripping is
+  // sufficient because cypress.config.js re-asserts LIVE_SUBMIT / I_KNOW_THIS_IS_LIVE /
+  // PLACE_ORDER / I_KNOW_THIS_PLACES_ORDERS from the PARENT process env inside setupNodeEvents, so
+  // a stray cypress.env.json or CYPRESS_-prefixed var cannot arm the child behind our back.
+  // stripArmingEnv matches case-insensitively — see scripts/armingEnv.js for why four plain
+  // `delete`s were not enough on Windows.
+  const childEnv = { ...stripArmingEnv(process.env), FORCE_COLOR: '' };
   // CHECKOUT_EMAIL_* / CHECKOUT_PASSWORD_* are deliberately NOT deleted here — see the stub-mode
   // note in the file header. Deleting them would not make the dashboard safer (the order guard in
   // cypress/support/e2e.js is what prevents a real order); it would silently turn the checkout
@@ -445,6 +468,19 @@ function handleApi(req, res, url) {
   if (req.method === 'POST' && url.pathname === '/api/run') {
     if (!requireToken(req, res)) return;
     if (running) return sendJson(res, 409, { error: 'A run is already in progress.' });
+    // Claim the lock NOW, synchronously, not in startRun after the body has arrived: otherwise
+    // two concurrent POSTs both pass the check above and start two Cypress trees, and Stop can
+    // only kill the one currentChild still points at. Every path below that does not reach
+    // startRun releases it again.
+    running = true;
+    let started = false;
+    const reject = (status, error) => {
+      running = false;
+      sendJson(res, status, { error });
+    };
+    req.on('close', () => {
+      if (!started) running = false; // body aborted / over the size cap
+    });
     let body = '';
     req.on('data', (c) => {
       body += c;
@@ -455,17 +491,23 @@ function handleApi(req, res, url) {
       try {
         parsed = body ? JSON.parse(body) : {};
       } catch {
-        return sendJson(res, 400, { error: 'Invalid JSON body.' });
+        return reject(400, 'Invalid JSON body.');
+      }
+      // JSON.parse('null') / '[]' / '1' succeed; the property reads below would then throw
+      // inside this event handler and take the whole server down.
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return reject(400, 'Body must be a JSON object.');
       }
       const all = availableStores();
-      const specsByStore = parsed.specsByStore || null;
+      const specsByStore =
+        parsed.specsByStore && typeof parsed.specsByStore === 'object' ? parsed.specsByStore : null;
       let stores = Array.isArray(parsed.stores)
         ? parsed.stores.map((s) => String(s).toLowerCase())
         : specsByStore
           ? Object.keys(specsByStore).map((s) => s.toLowerCase())
           : [];
       stores = stores.filter((s) => all.includes(s));
-      if (!stores.length) return sendJson(res, 400, { error: 'No valid stores selected.' });
+      if (!stores.length) return reject(400, 'No valid stores selected.');
 
       // Normalize specsByStore keys to lowercase validated stores, and drop
       // any spec string that isn't a real file on disk — these values flow
@@ -478,12 +520,18 @@ function handleApi(req, res, url) {
         for (const [k, v] of Object.entries(specsByStore)) {
           const code = String(k).toLowerCase();
           if (!all.includes(code) || !Array.isArray(v)) continue;
-          const specs = v.filter((s) => realSpecs.has(String(s)));
+          // The run-summary sidecars record Windows paths (cypress\e2e\x.cy.js) while
+          // availableSpecs() uses forward slashes, so normalize before the allowlist lookup.
+          // Without this every "re-run failed" request silently fell through to a full run.
+          const specs = v
+            .map((s) => String(s).replace(/\\/g, '/'))
+            .filter((s) => realSpecs.has(s));
           if (specs.length) normSpecs[code] = specs;
         }
         if (!Object.keys(normSpecs).length) normSpecs = null;
       }
 
+      started = true;
       sendJson(res, 202, { started: true, stores });
       startRun({ stores, specsByStore: normSpecs });
     });
@@ -512,19 +560,40 @@ function handleApi(req, res, url) {
   return sendText(res, 404, 'Not found');
 }
 
-const server = http.createServer((req, res) => {
-  const url = new URL(req.url, `http://localhost:${PORT}`);
+function handleRequest(req, res) {
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
+
+  // DNS-rebinding guard — see ALLOWED_HOSTS above.
+  if (!ALLOWED_HOSTS.has(String(req.headers.host || '').toLowerCase())) {
+    return sendText(res, 403, 'Forbidden host');
+  }
+  if (req.method === 'POST' && req.headers.origin && !ALLOWED_ORIGINS.has(req.headers.origin)) {
+    return sendText(res, 403, 'Forbidden origin');
+  }
+
+  let url;
+  try {
+    url = new URL(req.url, `http://localhost:${PORT}`);
+  } catch {
+    return sendText(res, 400, 'Bad request');
+  }
 
   if (url.pathname.startsWith('/api/')) return handleApi(req, res, url);
 
-  // Artifact serving (read-only, guarded).
-  if (url.pathname.startsWith('/artifacts/screenshots/')) {
-    const rel = decodeURIComponent(url.pathname.slice('/artifacts/screenshots/'.length));
-    return serveFile(res, SCREENSHOTS_DIR, rel, { range: req.headers.range });
-  }
-  if (url.pathname.startsWith('/artifacts/videos/')) {
-    const rel = decodeURIComponent(url.pathname.slice('/artifacts/videos/'.length));
-    return serveFile(res, VIDEOS_DIR, rel, { range: req.headers.range });
+  // Artifact serving (read-only, guarded). A lone '%' makes decodeURIComponent throw.
+  for (const [prefix, root] of [
+    ['/artifacts/screenshots/', SCREENSHOTS_DIR],
+    ['/artifacts/videos/', VIDEOS_DIR],
+  ]) {
+    if (url.pathname.startsWith(prefix)) {
+      let rel;
+      try {
+        rel = decodeURIComponent(url.pathname.slice(prefix.length));
+      } catch {
+        return sendText(res, 400, 'Bad request');
+      }
+      return serveFile(res, root, rel, { range: req.headers.range });
+    }
   }
 
   // index.html carries the per-session dashboard token, so it can't be served as a static
@@ -544,6 +613,18 @@ const server = http.createServer((req, res) => {
   // Static UI (app.js, styles.css, etc.).
   const rel = url.pathname.replace(/^\/+/, '');
   return serveFile(res, PUBLIC_DIR, rel);
+}
+
+// A synchronous throw anywhere in a handler must cost one request a 500, never the whole
+// dashboard: an exit mid-run leaves the spawned Cypress + Chrome tree running with no Stop button.
+const server = http.createServer((req, res) => {
+  try {
+    handleRequest(req, res);
+  } catch (err) {
+    console.error(`[dashboard] request failed: ${err && err.stack ? err.stack : err}`);
+    if (!res.headersSent) sendText(res, 500, 'Internal error');
+    else res.end();
+  }
 });
 
 server.on('error', (err) => {
@@ -558,8 +639,8 @@ server.on('error', (err) => {
   throw err;
 });
 
-// Bind to localhost only — this server accepts unauthenticated run/stop/exit
-// commands, so it must never be reachable from other devices on the network.
+// Bind to localhost only — the read-only GET routes (results, history, artifacts, the token-bearing
+// index page) are unauthenticated, so it must never be reachable from other devices on the network.
 server.listen(PORT, '127.0.0.1', () => {
   console.log(
     `\n  ============================================================\n` +

@@ -17,7 +17,11 @@
 # subfolder is ignored too. cypress.env.json and .env* are pure safety nets: this repo uses
 # neither, but Cypress auto-loads the first and half the tutorials on the internet tell people
 # to create the second.
-credentials.json
+# credentials*.json, not credentials.json: Windows hides file extensions by default, so
+# "rename the copy to credentials.json" routinely produces credentials.json.json, and Explorer's
+# "credentials - Copy.json" is the other common slip. All of them hold real passwords.
+credentials*.json
+!credentials.example.json
 cypress.env.json
 .env
 .env.*

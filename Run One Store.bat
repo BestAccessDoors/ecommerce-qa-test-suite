@@ -21,6 +21,21 @@ if errorlevel 1 (
   exit /b 1
 )
 
+REM --- Never let an inherited variable arm this run ---------------------
+REM  setlocal keeps these blanks inside this window (PATH from ensure-node
+REM  above is already set, and survives). cmd variable names are case-
+REM  insensitive, so this also clears e.g. a "setx place_order true".
+REM  Live leads and real orders are CLI-only; see README "Option 6 - Live Submission".
+setlocal
+set "LIVE_SUBMIT="
+set "I_KNOW_THIS_IS_LIVE="
+set "PLACE_ORDER="
+set "I_KNOW_THIS_PLACES_ORDERS="
+set "CYPRESS_LIVE_SUBMIT="
+set "CYPRESS_I_KNOW_THIS_IS_LIVE="
+set "CYPRESS_PLACE_ORDER="
+set "CYPRESS_I_KNOW_THIS_PLACES_ORDERS="
+
 if not exist "node_modules" (
   echo.
   echo  [!] It looks like setup hasn't run yet.
@@ -53,6 +68,9 @@ echo.
 echo    0.  Quit
 echo.
 set "store="
+REM  Clear choice too: set /p leaves it unchanged on a bare Enter, which
+REM  would silently re-run the previously chosen store.
+set "choice="
 set /p choice=  Your choice:
 
 if "%choice%"=="1" set store=bestus

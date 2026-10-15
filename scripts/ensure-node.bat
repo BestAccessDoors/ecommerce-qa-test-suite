@@ -25,6 +25,14 @@ REM  runway of any version Cypress can actually use today. (Was
 REM  22.23.2, whose EOL is April 30 2027; re-pinned Aug 14 2026 after
 REM  verifying 24 end to end - see :__en_gate for the evidence.)
 set "NODE_PIN=24.19.0"
+REM  SHA256 of the official node-v<PIN>-win-x64.zip, copied from
+REM  https://nodejs.org/dist/v<PIN>/SHASUMS256.txt. CHANGE IT WITH
+REM  NODE_PIN - a stale hash makes every fresh setup refuse the zip.
+REM  Hard-coded rather than read from that file at install time: the
+REM  file comes from the same server as the zip, so it cannot protect
+REM  against that server, and a zip dropped into installers\ (or a
+REM  shared/UNC copy) has no SHASUMS file next to it at all.
+set "NODE_ZIP_SHA256=57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73"
 REM  Versions we ACCEPT if already present are decided by :__en_gate
 REM  below - currently majors 24 and 22 only. That is DELIBERATELY
 REM  narrower than Cypress's own engines range
@@ -40,7 +48,10 @@ for %%I in ("%~dp0..") do set "EN_ROOT=%%~fI"
 set "EN_HOME=%EN_ROOT%\tools"
 set "EN_ALT=%LOCALAPPDATA%\BestAccessDoorsTests\tools"
 set "EN_INST=%EN_ROOT%\installers"
-set "EN_TMP=%TEMP%\badqa-node-%NODE_PIN%"
+REM  Randomised, not predictable: the opt-in MSI is hash-checked here and
+REM  then launched ELEVATED, so a fixed name would let other same-user
+REM  code pre-create the folder and swap the file in between.
+set "EN_TMP=%TEMP%\badqa-node-%NODE_PIN%-%RANDOM%%RANDOM%"
 
 REM --- Windows' own tools, by ABSOLUTE path --------------------------
 REM  Never call these bare. Git for Windows ships GNU tar as tar.exe,
@@ -99,11 +110,17 @@ echo.
 REM ===================================================================
 REM  RUNG 3 - an installer someone dropped into installers\
 REM ===================================================================
-if exist "%EN_INST%\%EN_PKG%.zip" (
-  echo  [i] Using the bundled copy in "installers\%EN_PKG%.zip"
-  set "EN_ZIP=%EN_INST%\%EN_PKG%.zip"
-  goto :__en_unpack
-)
+REM  Only the exact pinned zip is recognised - no MSI, no other version.
+REM  It is hash-checked like a download: installers\ may sit on a shared
+REM  or UNC folder that other people can write to.
+set "EN_FILE=%EN_INST%\%EN_PKG%.zip"
+set "EN_WANT=%NODE_ZIP_SHA256%"
+set "EN_SHAFILE="
+if exist "%EN_FILE%" echo  [i] Checking the bundled copy in "installers\%EN_PKG%.zip"...
+if exist "%EN_FILE%" call :__en_verify
+if exist "%EN_FILE%" if errorlevel 1 goto :__en_hash_fail
+if exist "%EN_FILE%" set "EN_ZIP=%EN_FILE%"
+if exist "%EN_FILE%" goto :__en_unpack
 
 REM ===================================================================
 REM  RUNG 4 - machine-wide install. OPT-IN ONLY.
@@ -126,15 +143,10 @@ set "EN_OUT=%EN_TMP%\%EN_PKG%.zip"
 call :__en_fetch
 if errorlevel 1 goto :__en_dl_fail
 
-set "EN_URL=%EN_BASE%/SHASUMS256.txt"
-set "EN_OUT=%EN_TMP%\SHASUMS256.txt"
-call :__en_fetch
-if errorlevel 1 goto :__en_dl_fail
-
 echo  Checking the download is genuine...
 set "EN_FILE=%EN_TMP%\%EN_PKG%.zip"
-set "EN_FNAME=%EN_PKG%.zip"
-set "EN_SHAFILE=%EN_TMP%\SHASUMS256.txt"
+set "EN_WANT=%NODE_ZIP_SHA256%"
+set "EN_SHAFILE="
 call :__en_verify
 if errorlevel 1 goto :__en_hash_fail
 echo  [OK] Download verified.
@@ -205,9 +217,11 @@ goto :__en_manual
 
 :__en_hash_fail
 echo.
-echo  [X] The downloaded Node.js file did not match its official
-echo      checksum, so it was NOT installed. This usually means the
-echo      download was interrupted - try again.
+echo  [X] The Node.js zip did not match its official checksum, so
+echo      it was NOT installed. This usually means a download was
+echo      interrupted, or the copy in installers\ is damaged - try again.
+echo      (Maintainers: if NODE_PIN was just changed, NODE_ZIP_SHA256
+echo       in scripts\ensure-node.bat must be changed with it.)
 if exist "%EN_TMP%" rd /s /q "%EN_TMP%" 2>nul
 goto :__en_manual
 
@@ -408,7 +422,8 @@ REM --- Download EN_URL to EN_OUT ------------------------------------
 if not exist "%EN_CURL%" goto :__en_fetch_ps
 REM  -f is mandatory: without it a 404 or proxy block page is written
 REM  into the output file and only surfaces later as a corrupt archive.
-"%EN_CURL%" -fL --retry 3 --connect-timeout 20 --max-time 1800 --progress-bar -o "%EN_OUT%" "%EN_URL%"
+REM  --proto/--proto-redir: never fetch or follow a redirect off https.
+"%EN_CURL%" -fL --proto =https --proto-redir =https --retry 3 --connect-timeout 20 --max-time 1800 --progress-bar -o "%EN_OUT%" "%EN_URL%"
 if not errorlevel 1 exit /b 0
 :__en_fetch_ps
 REM  Fallback for an authenticating corporate proxy: curl honours
@@ -419,7 +434,10 @@ if errorlevel 1 exit /b 1
 if not exist "%EN_OUT%" exit /b 1
 exit /b 0
 
-REM --- Verify EN_FILE against EN_SHAFILE ----------------------------
+REM --- Verify EN_FILE against EN_WANT, or against EN_SHAFILE --------
+REM  With EN_SHAFILE set, EN_WANT is looked up in that SHASUMS file by
+REM  EN_FNAME (the opt-in MSI path). With it empty, the caller's EN_WANT
+REM  is used as-is (the zip paths, which pass NODE_ZIP_SHA256).
 :__en_verify
 REM  The tool paths below are deliberately UNQUOTED. Inside
 REM  for /f ('...') a leading quote makes cmd mis-parse the whole
@@ -427,8 +445,13 @@ REM  command line ("The filename, directory name, or volume label
 REM  syntax is incorrect"). Safe here because these live under
 REM  %SystemRoot%\System32, which cannot contain spaces. The FILE
 REM  arguments stay quoted - those really can contain spaces.
-set "EN_WANT="
-for /f "tokens=1" %%A in ('%EN_FIND% /i /c:"%EN_FNAME%" "%EN_SHAFILE%"') do if not defined EN_WANT set "EN_WANT=%%A"
+REM  The file name must equal the line's SECOND token exactly, so a line
+REM  like "<hash>  %EN_FNAME%.sig" can never be picked up first. (Not a
+REM  findstr "$" anchor: findstr's $ only matches before a CR, and
+REM  nodejs.org serves SHASUMS256.txt with bare LF line endings, so an
+REM  anchored pattern silently never matches at all - verified.)
+if defined EN_SHAFILE set "EN_WANT="
+if defined EN_SHAFILE for /f "tokens=1,2" %%A in ('%EN_FIND% /i /c:"%EN_FNAME%" "%EN_SHAFILE%"') do if /i "%%B"=="%EN_FNAME%" if not defined EN_WANT set "EN_WANT=%%A"
 REM  certutil prints the bare hash on line 2, lowercase and unspaced.
 REM  Lines 1 and 3 are LOCALISED, so never match on their text - skip=1
 REM  and take the first line only, which is locale-independent.

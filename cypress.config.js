@@ -107,7 +107,9 @@ module.exports = defineConfig({
     // in commands.js) rely on would otherwise never reach Cypress.env() — leaving live mode a dead
     // gate that silently stays stubbed. Coercing "true"→true here (not the raw string) keeps the
     // strict `=== true` double-gate honest: both must be genuinely set. The dashboard strips both
-    // vars from the child env before spawn, so a dashboard run coerces to false → stub-only.
+    // vars from the child env before spawn, so a dashboard run coerces to false → stub-only. Like
+    // the order gate, both are re-asserted from process.env in setupNodeEvents, so no
+    // cypress.env.json / CYPRESS_* / --env value can arm them.
     //
     // CHECKOUT_EMAIL / CHECKOUT_PASSWORD follow the same forward-and-resolve pattern, and NOT the
     // CYPRESS_-prefix auto-import that PRODUCT_URL/RANDOMIZE_PRODUCT use. That choice is
@@ -146,6 +148,21 @@ module.exports = defineConfig({
       // two-line cypress.env.json next to the tests would arm every dashboard run silently.
       config.env.PLACE_ORDER = process.env.PLACE_ORDER === "true";
       config.env.I_KNOW_THIS_PLACES_ORDERS = process.env.I_KNOW_THIS_PLACES_ORDERS === "true";
+      // The Zoho live-submit gate needs the identical treatment, for the identical reason: a
+      // cypress.env.json carrying {"LIVE_SUBMIT":true,"I_KNOW_THIS_IS_LIVE":true}, or the pair
+      // CYPRESS_LIVE_SUBMIT/CYPRESS_I_KNOW_THIS_IS_LIVE (Cypress coerces "true" → true), would
+      // otherwise turn every dashboard and double-click run into a live run filing real CRM leads.
+      config.env.LIVE_SUBMIT = process.env.LIVE_SUBMIT === "true";
+      config.env.I_KNOW_THIS_IS_LIVE = process.env.I_KNOW_THIS_IS_LIVE === "true";
+      // And the store config itself: `site` carries checkout.placeOrder and checkout.spamProtection,
+      // both of which gate the order-placement suite. cypress.env.json {"site":{…}} or CYPRESS_site
+      // would replace it wholesale, so it is pinned to the file the loader actually validated.
+      config.env.site = site;
+      config.env.STORE = STORE;
+      // Same for baseUrl. CYPRESS_BASE_URL / CYPRESS_baseUrl / --config baseUrl= all override the
+      // e2e block above, and the checkout spec types the QA account's real password into whatever
+      // host baseUrl names. The store file is the one source of truth for which site is under test.
+      config.baseUrl = site.baseUrl;
       if (config.env.PLACE_ORDER && config.env.I_KNOW_THIS_PLACES_ORDERS) {
         console.warn(
           `\n  *** ARMED FOR ORDER PLACEMENT (${STORE}) ***\n` +

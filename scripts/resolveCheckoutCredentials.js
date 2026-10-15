@@ -75,11 +75,30 @@ function readFileSource(file, store) {
 }
 
 /**
+ * Windows hides known file extensions by default, so following "rename the copy to
+ * credentials.json" in Explorer produces credentials.json.json — which this resolver never reads,
+ * so every checkout test silently skips on "no credentials". Say so instead.
+ */
+function warnDoubledExtension(rootDir) {
+  for (const dir of [rootDir, process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'BestAccessDoorsTests')]) {
+    if (!dir) continue;
+    const doubled = path.join(dir, `${FILE_NAME}.json`);
+    if (fs.existsSync(doubled)) {
+      console.warn(
+        `[checkout] found ${doubled} — Windows hid the ".json" extension when it was renamed. ` +
+        `Rename it to exactly ${FILE_NAME} (turn on View > File name extensions in Explorer).`
+      );
+    }
+  }
+}
+
+/**
  * @param {string} store  lowercase store code (already validated by cypress.config.js)
  * @param {string} rootDir  repo root
  * @returns {{email: string, password: string}|null}
  */
 function resolveCheckoutCredentials(store, rootDir) {
+  warnDoubledExtension(rootDir);
   const perUser = process.env.LOCALAPPDATA
     ? path.join(process.env.LOCALAPPDATA, 'BestAccessDoorsTests', FILE_NAME)
     : null;

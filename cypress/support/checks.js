@@ -122,8 +122,9 @@ export const THIRD_PARTY_HOSTS = [
     // also have to satisfy what that code asks the global.
     //
     // Deliberately applies in LIVE_SUBMIT mode too (blockThirdParty runs unconditionally): this
-    // sitekey is the storefront's own client-side gate, NOT Zoho's captcha, and Zoho's endpoint
-    // never verifies it — so a live submission lands the same real lead it always did.
+    // sitekey is the storefront's own client-side gate, NOT part of the Zoho form, so stubbing it
+    // changes nothing about what Zoho receives — a live submission lands the same real lead it
+    // always did.
     //
     // Also the one entry here matched on a PATH segment rather than a host, so it covers
     // www.google.com/recaptcha/api.js, the recaptcha.net mirror and gstatic's
