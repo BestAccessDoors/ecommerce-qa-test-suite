@@ -49,7 +49,7 @@ export const pickRandom = (list) => list[Math.floor(Math.random() * list.length)
 
 // Noisy third-party analytics / ad / visitor-tracking hosts (GA, GTM, Meta, Reddit, Spotify,
 // Taboola, leadsy, PageSense, Geotargetly, etc.). Derived by auditing every resource the live
-// site loads (see the throwaway cypress/e2e/_audit-hosts.cy.js). Store-functional vendors
+// site loads (done with a throwaway spec that was not kept). Store-functional vendors
 // (SearchSpring search API, Yotpo reviews, Zoho forms, PayPal, fonts, library CDNs) are
 // deliberately excluded. Regexes (not globs) so they match the request's subdomain host, e.g.
 // www.google-analytics.com or wvbknd.leadsy.ai — a glob matching the host as a path segment

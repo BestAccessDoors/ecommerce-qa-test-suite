@@ -62,9 +62,10 @@ describeIfStore(proClubForm, 'Pro Club Application form', () => {
       cy.interceptZoho('submit', submitPattern);
     });
 
-    // KNOWN DEFICIENCY (BESTUS, July 2026): the live dropdown also offers "Canada",
-    // violating the US-only rule — left failing per the site-deficiency policy until
-    // the Zoho form (BestAccessDoorsProClubVIPProgramApplication) drops the option.
+    // Gated on forms.proClub.allowedCountries, which no store sets: BESTUS and BESTCA both offer
+    // Canada + United States on purpose (each routes the other country's applicants to its
+    // sibling store's Pro Club form — see CLAUDE.md, pro-club-form.cy.js). Set the key only for a
+    // store whose dropdown must be restricted.
     itIfStore(hasCountry && allowedCountries, "offers only the store's allowed countries in the dropdown", () => {
       cy.get('select[name="Address_Country"] option').then(($opts) => {
         const countries = [...$opts]
@@ -90,10 +91,9 @@ describeIfStore(proClubForm, 'Pro Club Application form', () => {
         cy.get('input[name="Email"]').clear({ force: true });
         page.submit();
         cy.expectNoSubmission();
-        // KNOWN DEFICIENCY (BESTUS, July 2026): submission is correctly blocked (see
-        // expectNoSubmission above), but the Email_error message never toggles visible —
-        // a Zoho form-config gap isolated to this field, confirmed live (see stores/bestus.json
-        // _notes). Skipped pending a fix to the BestAccessDoorsProClubVIPProgramApplication form.
+        // forms.proClub.emailErrorNotVisible skips only this visible-error assertion. Unused since
+        // Oct 15 2026: BESTUS carried it from July 2026, while its Email_error never toggled
+        // visible, and the error shows again now (verified by running this spec without the flag).
         if (!(proClubForm && proClubForm.emailErrorNotVisible)) {
           cy.expectFieldError('input[name="Email"]');
         }

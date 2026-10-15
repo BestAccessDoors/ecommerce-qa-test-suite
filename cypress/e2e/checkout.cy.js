@@ -498,9 +498,10 @@ describeIfStore(checkout, 'Checkout (through to the payment step)', () => {
    *
    * THREE GATES, all of which must hold — split across the describe and the it deliberately, so
    * each skip states the reason an operator can act on:
-   *   1. checkout.placeOrder (describe) — committed per-store opt-in. NO env var can set it, which
-   *      is what stops one armed command from ordering on every onboarded store when run-all.js
-   *      fans a single parent env out to all nine.
+   *   1. checkout.placeOrder (describe) — committed per-store opt-in. NO env var can set it
+   *      (cypress.config.js pins Cypress.env('site') to the store file in setupNodeEvents, so
+   *      cypress.env.json / CYPRESS_site cannot replace it), which is what stops one armed command
+   *      from ordering on every onboarded store when run-all.js fans a single parent env out to all nine.
    *   2. runnable (it) — the machine holds the QA sign-in and checkout.spamProtection is off.
    *   3. isPlaceOrder() (it) — the CLI double gate, re-asserted from the parent process env in
    *      cypress.config.js's setupNodeEvents so cypress.env.json / CYPRESS_* / --env cannot arm it.

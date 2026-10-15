@@ -66,9 +66,11 @@ describeIfStore(site.pdp, 'SEO – PDP', { testIsolation: false }, () => {
     cy.get('meta[name="description"]').invoke('attr', 'content').should('not.be.empty');
   });
 
-  // ADAP's theme emits no Product JSON-LD at all (verified in static HTML and at
-  // runtime on every pdp.popular URL) — a genuine SEO gap on that store, tracked
-  // via pdp.productJsonLd:false so the skip is visible instead of a permanent red.
+  // Escape hatch, currently unused: pdp.productJsonLd:false skips this for a store whose theme
+  // emits no Product JSON-LD at all. ADAP carried it until its theme started emitting the block
+  // (Sept 29 2026). Note it is NOT for a store that simply lacks the block as a fixable content
+  // gap — BRH emits only Organization JSON-LD (Product is microdata-only, re-checked Oct 15 2026)
+  // and is deliberately left failing here under the site-deficiency policy.
   itIfStore(site.pdp && site.pdp.productJsonLd !== false, 'has a JSON-LD Product block with name, sku, price, currency, and availability', () => {
     assertProductJsonLd({ requirePrice: !quoteOnlyProduct });
   }, "store PDPs emit no Product JSON-LD (pdp.productJsonLd is false)");

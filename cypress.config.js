@@ -62,6 +62,24 @@ if (site.forms && typeof site.forms === "object") {
     }
   }
 }
+// branding.* holds the skip flags (skipTouchTarget, …) and the nullable homepage gates
+// (partnerLinks, footerLocationText, …), so a typo there silently turns a test into a skip — or
+// a deliberate skip back into a failure. Same warn-only treatment.
+const KNOWN_BRANDING_KEYS = [
+  "copyrightText", "currency", "footer", "footerLocationText", "headerSelector", "imageHosts",
+  "mobileHeaderSelector", "mobileNavSelector", "overflowIgnore", "partnerLinks",
+  "skipTouchTarget", "warehousesLink",
+];
+if (site.branding && typeof site.branding === "object") {
+  for (const key of Object.keys(site.branding)) {
+    if (!KNOWN_BRANDING_KEYS.includes(key)) {
+      console.warn(
+        `[stores/${STORE}.json] unrecognized "branding.${key}" — typo? ` +
+        `(expected one of: ${KNOWN_BRANDING_KEYS.join(", ")})`
+      );
+    }
+  }
+}
 // Same check for checkout.*, and worth having for the same reason: a typo'd "selectrs" silently
 // falls all the way back to CHECKOUT_SELECTOR_DEFAULTS and then fails with a pile of confusing
 // "element not found" errors on a store that had correctly overridden them. The truthiness guard
