@@ -363,8 +363,10 @@ Sept 22 2026** and is the worked example; steps 1–3 below need no browser at a
    fleet onboarding):
    - **`GET /api/storefront/checkouts/<cartId>` → `shouldExecuteSpamCheck`.** `true`
      means BigCommerce checkout spam protection is on. The payment step then waits on
-     a reCAPTCHA check that automation cannot pass (ADC: an image challenge), so the
-     store cannot be onboarded until that changes.
+     a reCAPTCHA check that automation cannot pass (ADC: an image challenge). Since
+     Oct 12 2026 that is true of **every** store — see "Spam protection" below. The
+     config can still be filled in and verified up to payment from public endpoints
+     (ADC's was, behind `checkout.spamProtection: true`); the first real run waits.
    - **Grep the `/checkout` source for theme-enforced requirements.** A field
      `form-fields` reports as `required:false` can still be made mandatory by the
      store's own script. BRH's `field_28` becomes required whenever a freight method
@@ -420,11 +422,39 @@ Sept 22 2026** and is the worked example; steps 1–3 below need no browser at a
    the per-attempt results as well as the final colour, because a popup that covers
    only sometimes can fail attempt 1 and pass attempt 2.
 
-Two stores need a judgement call first: **BRH** is `pdp.quoteOnly` with no Add to
-Cart anywhere, so it may have no checkout journey at all; **PDA** is Spanish, and
+All nine stores have been onboarded this way (BESTUS, BESTCA, then the other seven
+on Sept 30 2026; ADC's config filled Oct 12 2026). Two arming caveats remain: **BRH**
+ships freight only and its store credit does **not** cover the order, so it must not
+get `checkout.placeOrder` without funding the account first; **PDA** is Spanish, and
 `placeOrder.js` carries two English-only strings (the "Payment is not required"
 overlay text and `ORDER_NUMBER_RE`) that would need making configurable before it
 could be armed.
+
+### Spam protection: why every checkout test is skipped, and how to re-enable one
+
+After a bot attack, BigCommerce checkout spam protection was switched on across the
+fleet on **Oct 12 2026**. With it on, the payment step waits on a reCAPTCHA check an
+automated browser cannot pass (it spins on "Loading" forever, or shows an image
+challenge), so every store's `checkout` section carries `spamProtection: true` and
+`checkout.cy.js` skips all its tests with `[skipped: checkout spam protection
+(reCAPTCHA) is on …]`. Re-checked **Oct 15 2026**: still on for all eight stores
+whose checkout product can be carted without options (BESTUS's needs modifier
+options, so a guest cart cannot be made for it from the API).
+
+To check one store (no sign-in, nothing kept):
+
+1. `GET` the store's `checkout.product` PDP with a cookie jar, and read `product_id`
+   from the add-to-cart form.
+2. `POST /api/storefront/carts` with `{"lineItems":[{"productId":<id>,"quantity":1}]}`.
+   Send the `XSRF-TOKEN` cookie back as an `X-XSRF-TOKEN` header, or the storefront
+   answers **403 Forbidden**.
+3. `GET /api/storefront/checkouts/<cartId>` and read `shouldExecuteSpamCheck`.
+4. `DELETE /api/storefront/carts/<cartId>`.
+
+When it reads `false`, delete that store's `"spamProtection": true` line and run
+`checkout.cy.js` on that store once, by hand, reading the log (address-book count,
+`deleted N cart(s)`, `[order-guard]` lines) before trusting it in a fleet run. ADC's
+first run is still an onboarding run: read its `_notes` first.
 
 ### 8b. The armed order test, and the manual cleanup it creates
 

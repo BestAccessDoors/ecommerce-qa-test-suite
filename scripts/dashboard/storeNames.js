@@ -1,8 +1,8 @@
 /**
- * Friendly display names for each store code — the single source of the names
- * that used to be duplicated in the "Run One Store.bat" menu. The dashboard
- * server uses this for GET /api/stores; codes with no entry fall back to their
- * uppercase code.
+ * Friendly display names for each store code. The dashboard server uses this for
+ * GET /api/stores; codes with no entry fall back to their uppercase code.
+ * The same names are ALSO hardcoded in the "Run One Store.bat" menu (a batch file
+ * cannot read this module) — keep the two in sync when a store is added or renamed.
  */
 module.exports = {
   bestus: 'Best Access Doors USA',

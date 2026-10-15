@@ -31,8 +31,10 @@ too - see "OLD WAY" near the bottom.)
       copy of Node.js. That's normal. Nothing else on your
       computer is changed, and deleting the folder is safe (setup
       just downloads it again).
-    - If Windows ever asks for permission during setup, clicking
-      either Yes or No is fine - it works both ways.
+    - Setup normally needs no permission at all. Windows only asks
+      if someone has turned on the optional machine-wide install
+      (SETUP_MACHINE_NODE=1). If it does ask, Yes or No are both
+      fine - it works either way.
 
   You also need Google Chrome installed (most computers
   already have it).  Get it at:  https://www.google.com/chrome
@@ -62,6 +64,11 @@ too - see "OLD WAY" near the bottom.)
     1. Find the file:   credentials.example.json
     2. Make a copy of it in this same folder.
     3. Rename the copy to:   credentials.json
+       Careful: Windows usually hides the ".json" part of file
+       names. If the copy shows as "credentials.example - Copy"
+       with no ".json", rename it to just:   credentials
+       (otherwise it becomes credentials.json.json and is
+       ignored - the tests print a warning if that happens).
     4. Open it in Notepad and replace the REPLACE_ME bits
        with the sign-in details you were given.
     5. Save. That's it - every way of running the tests
@@ -77,6 +84,13 @@ too - see "OLD WAY" near the bottom.)
   runs, and the checkout test simply shows as "skipped" - which
   is not a failure.
 
+  RIGHT NOW (since October 12 2026) the checkout tests show as
+  "skipped" on every store EVEN WITH the password in place: the
+  stores switched on an anti-robot check (reCAPTCHA) at checkout
+  that a test robot cannot get past. The skip says so in its
+  name. The technical team re-enables them when that check is
+  turned off. Nothing for you to do.
+
 
 ------------------------------------------------------------
   STEP 2 - OPEN THE DASHBOARD  (the easy way)
@@ -84,12 +98,13 @@ too - see "OLD WAY" near the bottom.)
 
   Double-click:   Test Dashboard.bat
 
-  Your web browser opens automatically. In the page:
+  Google Chrome opens automatically. In the page:
     1. Tick the store(s) you want to test (or "Select all").
     2. Click  "Run selected".
     3. Watch the colored cards fill in as each store finishes.
 
-  Green = all good.  Orange/Red = something is broken.
+  Green = all good.  Grey = a few tests failed.
+  Orange/Red = more is broken.
   Click a red card to see the failing tests, open the
   screenshot, or play the video of what happened.
 
@@ -103,11 +118,12 @@ too - see "OLD WAY" near the bottom.)
 
   In the Dashboard, each store gets a card:
     - PASS (green)   = working
-    - FAIL (red/orange) = something is broken - click to see
+    - FAIL (grey/orange/red) = something is broken - click to see
+        (grey: most tests passed; red: most did not)
     - pending / skipped = turned off on purpose (not a problem)
         e.g. a store that doesn't have that form, or the
-        checkout test when this computer has no sign-in
-        details (see STEP 1b). The reason is written right
+        checkout tests (see STEP 1b - currently skipped on every
+        store on purpose). The reason is written right
         in the test's name, in square brackets.
 
   The "History" tab shows every past run.
