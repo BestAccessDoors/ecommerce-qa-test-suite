@@ -170,9 +170,10 @@ module.exports = defineConfig({
           `  credit. Any order it creates must be cancelled by hand in the admin.\n`);
       }
 
-      // Required inside setupNodeEvents so prepareAudit and lighthouse share the same
-      // module instance (and thus the same internal launchArgs closure variable).
-      const { lighthouse, prepareAudit } = require("@cypress-audit/lighthouse");
+      // In-repo replacement for @cypress-audit/lighthouse (see scripts/lighthouseAudit.js).
+      // prepareAudit records Chrome's debugging port in module state that lighthouseTask reads,
+      // so both must come from this one require.
+      const { lighthouseTask, prepareAudit } = require("./scripts/lighthouseAudit");
       const { appendRunLog } = require("./scripts/writeRunLog");
 
       // Append a proof-of-run block to results/test-results.log after every
@@ -191,7 +192,7 @@ module.exports = defineConfig({
         return launchOptions;
       });
       on('task', {
-        lighthouse: lighthouse(),
+        lighthouse: lighthouseTask(),
         // Minimal PDP-pick attribution for pickRandom()-based specs — console.log from a task
         // reaches this process's real stdout (unlike cy.log, invisible in headless `cypress run`,
         // this suite's default mode). Purely informational; never affects pass/fail.

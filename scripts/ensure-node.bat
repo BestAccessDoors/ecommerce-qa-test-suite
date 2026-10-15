@@ -320,8 +320,9 @@ REM  it: Node 20 went end-of-life April 30 2026, so it receives no
 REM  further security patches.
 REM
 REM  TO ACCEPT A NEW MAJOR (e.g. 26): Cypress >= 15.16.0 replaced the
-REM  extract-zip/yauzl@2 stack with yauzl ^3.3.1, so bump Cypress
-REM  FIRST, then re-run the verification procedure in MAINTENANCE.md,
+REM  extract-zip/yauzl@2 stack with yauzl ^3.3.1, and the suite moved to
+REM  Cypress 15.21.1 on Oct 15 2026 - so that step is done. Next, run the
+REM  verification procedure in MAINTENANCE.md against the new major,
 REM  then add the major both here AND in scripts/nodeGate.js (the two
 REM  are deliberate mirrors of each other).
 REM  Odd majors (21, 23, 25) are non-LTS and fall through to reject.
