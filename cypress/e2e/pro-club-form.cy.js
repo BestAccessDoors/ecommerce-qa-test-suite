@@ -5,14 +5,16 @@ import { getStore, describeIfStore, itIfStore, storePersona } from '../support/s
 const site = getStore();
 const proClubForm = site.forms && site.forms.proClub;
 const submitPattern = proClubForm && proClubForm.submitUrlPattern;
-// Some Pro Club forms have no country dropdown (BESTCA's Canada-only form) — gate the
+// A Pro Club form may have no country dropdown (BESTCA's had none until July 2026) — gate the
 // country-specific tests on it.
 const hasCountry = proClubForm && proClubForm.hasCountry !== false;
-// Business rule: each store's Pro Club is region-locked (BESTUS accepts US addresses
-// only; BESTCA is implicitly Canada-only via its missing country field). The Zoho form
-// has no address validation, so the enforceable check is that the country dropdown
-// offers nothing outside forms.proClub.allowedCountries.
+// Optional restriction: when set, the dropdown must offer nothing outside this list. Neither
+// current store sets it — both offer Canada + United States on purpose (see below).
 const allowedCountries = proClubForm && proClubForm.allowedCountries;
+// The country the store deliberately preselects, if any. Unset means the dropdown must start on
+// its placeholder. BESTUS preselects "United States" (intended — confirmed by the store owner
+// Oct 16 2026); BESTCA starts on "-Select-".
+const defaultCountry = proClubForm && proClubForm.defaultCountry;
 
 describeIfStore(proClubForm, 'Pro Club Application form', () => {
   let page;
@@ -75,13 +77,22 @@ describeIfStore(proClubForm, 'Pro Club Application form', () => {
       });
     }, "store's Pro Club form has no country restriction (forms.proClub.allowedCountries not set)");
 
-    itIfStore(hasCountry, 'defaults the country dropdown to a placeholder selection', () => {
+    const countryDefaultTitle = defaultCountry
+      ? `defaults the country dropdown to ${defaultCountry}`
+      : 'defaults the country dropdown to a placeholder selection';
+    itIfStore(hasCountry, countryDefaultTitle, () => {
       cy.get('select[name="Address_Country"]').should(($sel) => {
-        const selected = $sel.val();
-        expect(selected).to.satisfy(
-          (v) => !v || v === '' || v === '-Select-' || v === '--',
-          `Expected placeholder, got "${selected}"`
-        );
+        // Compared on the selected option's TEXT: Zoho renders most options with no value
+        // attribute, so val() is the text anyway, but the placeholder carries value="-Select-".
+        const selected = $sel.find('option:selected').text().trim();
+        if (defaultCountry) {
+          expect(selected, 'preselected country (forms.proClub.defaultCountry)').to.equal(defaultCountry);
+        } else {
+          expect(selected).to.satisfy(
+            (v) => !v || v === '-Select-' || v === '--',
+            `Expected placeholder, got "${selected}" (set forms.proClub.defaultCountry if the preselection is intended)`
+          );
+        }
       });
     }, "store's Pro Club form has no country field (forms.proClub.hasCountry is false)");
 
