@@ -62,6 +62,24 @@ if (site.forms && typeof site.forms === "object") {
     }
   }
 }
+// branding.* holds the skip flags (skipTouchTarget, …) and the nullable homepage gates
+// (partnerLinks, footerLocationText, …), so a typo there silently turns a test into a skip — or
+// a deliberate skip back into a failure. Same warn-only treatment.
+const KNOWN_BRANDING_KEYS = [
+  "copyrightText", "currency", "footer", "footerLocationText", "headerSelector", "imageHosts",
+  "mobileHeaderSelector", "mobileNavSelector", "overflowIgnore", "partnerLinks",
+  "skipTouchTarget", "warehousesLink",
+];
+if (site.branding && typeof site.branding === "object") {
+  for (const key of Object.keys(site.branding)) {
+    if (!KNOWN_BRANDING_KEYS.includes(key)) {
+      console.warn(
+        `[stores/${STORE}.json] unrecognized "branding.${key}" — typo? ` +
+        `(expected one of: ${KNOWN_BRANDING_KEYS.join(", ")})`
+      );
+    }
+  }
+}
 // Same check for checkout.*, and worth having for the same reason: a typo'd "selectrs" silently
 // falls all the way back to CHECKOUT_SELECTOR_DEFAULTS and then fails with a pile of confusing
 // "element not found" errors on a store that had correctly overridden them. The truthiness guard
@@ -107,7 +125,9 @@ module.exports = defineConfig({
     // in commands.js) rely on would otherwise never reach Cypress.env() — leaving live mode a dead
     // gate that silently stays stubbed. Coercing "true"→true here (not the raw string) keeps the
     // strict `=== true` double-gate honest: both must be genuinely set. The dashboard strips both
-    // vars from the child env before spawn, so a dashboard run coerces to false → stub-only.
+    // vars from the child env before spawn, so a dashboard run coerces to false → stub-only. Like
+    // the order gate, both are re-asserted from process.env in setupNodeEvents, so no
+    // cypress.env.json / CYPRESS_* / --env value can arm them.
     //
     // CHECKOUT_EMAIL / CHECKOUT_PASSWORD follow the same forward-and-resolve pattern, and NOT the
     // CYPRESS_-prefix auto-import that PRODUCT_URL/RANDOMIZE_PRODUCT use. That choice is
@@ -146,6 +166,21 @@ module.exports = defineConfig({
       // two-line cypress.env.json next to the tests would arm every dashboard run silently.
       config.env.PLACE_ORDER = process.env.PLACE_ORDER === "true";
       config.env.I_KNOW_THIS_PLACES_ORDERS = process.env.I_KNOW_THIS_PLACES_ORDERS === "true";
+      // The Zoho live-submit gate needs the identical treatment, for the identical reason: a
+      // cypress.env.json carrying {"LIVE_SUBMIT":true,"I_KNOW_THIS_IS_LIVE":true}, or the pair
+      // CYPRESS_LIVE_SUBMIT/CYPRESS_I_KNOW_THIS_IS_LIVE (Cypress coerces "true" → true), would
+      // otherwise turn every dashboard and double-click run into a live run filing real CRM leads.
+      config.env.LIVE_SUBMIT = process.env.LIVE_SUBMIT === "true";
+      config.env.I_KNOW_THIS_IS_LIVE = process.env.I_KNOW_THIS_IS_LIVE === "true";
+      // And the store config itself: `site` carries checkout.placeOrder and checkout.spamProtection,
+      // both of which gate the order-placement suite. cypress.env.json {"site":{…}} or CYPRESS_site
+      // would replace it wholesale, so it is pinned to the file the loader actually validated.
+      config.env.site = site;
+      config.env.STORE = STORE;
+      // Same for baseUrl. CYPRESS_BASE_URL / CYPRESS_baseUrl / --config baseUrl= all override the
+      // e2e block above, and the checkout spec types the QA account's real password into whatever
+      // host baseUrl names. The store file is the one source of truth for which site is under test.
+      config.baseUrl = site.baseUrl;
       if (config.env.PLACE_ORDER && config.env.I_KNOW_THIS_PLACES_ORDERS) {
         console.warn(
           `\n  *** ARMED FOR ORDER PLACEMENT (${STORE}) ***\n` +
@@ -153,9 +188,10 @@ module.exports = defineConfig({
           `  credit. Any order it creates must be cancelled by hand in the admin.\n`);
       }
 
-      // Required inside setupNodeEvents so prepareAudit and lighthouse share the same
-      // module instance (and thus the same internal launchArgs closure variable).
-      const { lighthouse, prepareAudit } = require("@cypress-audit/lighthouse");
+      // In-repo replacement for @cypress-audit/lighthouse (see scripts/lighthouseAudit.js).
+      // prepareAudit records Chrome's debugging port in module state that lighthouseTask reads,
+      // so both must come from this one require.
+      const { lighthouseTask, prepareAudit } = require("./scripts/lighthouseAudit");
       const { appendRunLog } = require("./scripts/writeRunLog");
 
       // Append a proof-of-run block to results/test-results.log after every
@@ -174,7 +210,7 @@ module.exports = defineConfig({
         return launchOptions;
       });
       on('task', {
-        lighthouse: lighthouse(),
+        lighthouse: lighthouseTask(),
         // Minimal PDP-pick attribution for pickRandom()-based specs — console.log from a task
         // reaches this process's real stdout (unlike cy.log, invisible in headless `cypress run`,
         // this suite's default mode). Purely informational; never affects pass/fail.

@@ -9,7 +9,7 @@ here. Operators never touch any of this — the launchers handle it for them.
 | What | Pinned to | Set in | Supported until |
 | ---- | --------- | ------ | --------------- |
 | Node.js | **24.19.0** (Krypton LTS) | `NODE_PIN` in [scripts/ensure-node.bat](scripts/ensure-node.bat) | **April 30 2028** |
-| Cypress | **15.15.0** | `devDependencies` in [package.json](package.json) | n/a (see below) |
+| Cypress | **15.21.1** (exact, no caret) | `devDependencies` in [package.json](package.json), resolved in `package-lock.json` | n/a (see below) |
 
 ---
 
@@ -21,10 +21,23 @@ wins — every re-pin costs a verification cycle. Node 24 is supported until Apr
 30 2028. It replaced Node 22.23.2 (support ends April 30 2027) on **Aug 14
 2026** for exactly that reason: same amount of work, twelve more months of life.
 
-**Cypress held at 15.15.0 deliberately.** Newer 15.x releases exist (15.20.1 as
-of Aug 2026). Nothing is wrong with them — the suite is simply verified against
-15.15.0 across all nine stores, and a Cypress bump can shift spec behaviour, so
-it is changed on its own and never in the same pass as a Node re-pin.
+**Cypress 15.21.1, pinned exactly.** It replaced 15.15.0 on **Oct 15 2026**,
+because 15.15.0's binary unzip stack (`extract-zip` 2.0.1) carries two high-severity
+symlink path-traversal advisories (GHSA-jmr9-qjv8-65gv, GHSA-7pqw-9j4j-h8q3) and is
+the same stack that breaks Node 26 (below). The version in `package.json` has no
+caret on purpose: deleting or regenerating the lockfile must not silently move the
+suite onto an unverified release. A Cypress bump can shift spec behaviour, so it is
+changed on its own and never in the same pass as a Node re-pin (Node stayed at
+24.19.0 for this one).
+
+**Lighthouse 13, without `@cypress-audit/lighthouse`.** That plugin's last release
+(1.4.2) calls Lighthouse's `legacyNavigation`, which Lighthouse 12 removed, so it
+held the suite on Lighthouse 10 — whose puppeteer-core / tar-fs / ws / proxy-agent
+tree carried eleven high-severity advisories. The plugin was replaced on Oct 15 2026
+by [scripts/lighthouseAudit.js](scripts/lighthouseAudit.js) (Node side) and
+[cypress/support/lighthouse.js](cypress/support/lighthouse.js) (`cy.lighthouse`), same
+call shape and threshold semantics. Lighthouse 13 needs Node ≥ 22.19, which both
+accepted majors satisfy. `npm audit` reported **0 vulnerabilities** after the change.
 
 ## 2. Which Node versions are accepted, and why not others
 
@@ -57,8 +70,10 @@ The cause is Cypress 15.15.0's unzip stack: `extract-zip` 2.0.1 → `yauzl`
 **Cypress 15.16.0 replaced that stack with `yauzl` ^3.3.1**, and every release
 since keeps it. So the route to supporting Node 26 (or any newer major) is:
 
-1. Bump Cypress to ≥ 15.16.0 and re-verify the suite across the stores.
+1. ~~Bump Cypress to ≥ 15.16.0 and re-verify the suite across the stores.~~
+   **Done Oct 15 2026** (15.21.1, see section 3).
 2. Run the verification procedure in section 4 against the new Node major.
+   Not yet done for Node 26 — until it is, Node 26 stays rejected.
 3. Only if that passes, add the major to **both** `:__en_gate` *and*
    [scripts/nodeGate.js](scripts/nodeGate.js) — they are deliberate mirrors.
 
@@ -73,6 +88,8 @@ executed green against a live store.
 | Aug 12 2026 | 26.7.0 | 15.15.0 | **dies mid-unzip, exits 0** | fails (exit 1) | — | ❌ unusable |
 | Aug 14 2026 | **24.19.0** | 15.15.0 | completes | passes | `homepage.cy.js` 13/13 | ✅ **current pin** |
 | Aug 14 2026 | 26.7.0 | 15.15.0 | **dies mid-unzip, exits 0**, no `Cypress.exe` | fails (exit 1) | — | ❌ re-confirmed |
+| Oct 15 2026 | **24.19.0** | **15.21.1** | completes (isolated empty cache, `Cypress.exe` present) | passes | `homepage.cy.js` 13/13 | ✅ **current pin** |
+| Oct 15 2026 | 22.23.2 | 15.21.1 | completes (isolated empty cache, `Cypress.exe` present) | passes | `homepage.cy.js` 13/13 | ✅ good |
 
 ### Bootstrap ladder — verified Aug 14 2026
 
@@ -88,9 +105,19 @@ after the re-pin. Recorded here so a successor knows what "working" looks like:
 | 5 download + verify | no `tools\`, no `installers\` | downloaded 34MB, SHA256 matched, unpacked, temp folder cleaned up |
 | 6 manual instructions | **not tested** — needs the network genuinely down | `HTTPS_PROXY` alone will not force it, because the PowerShell fallback uses the *system* proxy and succeeds anyway (that is its purpose) |
 
-`cypress verify`'s hash comparison was checked separately against a genuine file
-(match) and a byte-flipped copy (mismatch), confirming the `skip=1` +
-space-stripping handling of `certutil` output.
+`ensure-node.bat`'s own hash comparison (`:__en_verify`, not anything in
+Cypress) was checked separately against a genuine file (match) and a byte-flipped
+copy (mismatch), confirming the `skip=1` + space-stripping handling of `certutil`
+output.
+
+**Re-checked Oct 15 2026** after the zip hash was pinned in the script
+(`NODE_ZIP_SHA256`), in a sandbox with Node removed from `PATH`: a genuine bundled
+zip in `installers\` installed; a tampered one was refused (it had been unpacked
+unverified before); the download rung verified against the pinned hash; detect-only
+still accepted the existing portable 22.23.2 and printed no "cannot find the batch
+label" line. The opt-in MSI rung's SHASUMS lookup now compares the file name as an
+exact second token — a findstr `$` anchor was tried and never matches, because
+nodejs.org serves `SHASUMS256.txt` with bare LF line endings.
 
 ## 4. How to verify a candidate Node/Cypress combination
 
@@ -132,8 +159,11 @@ If it passes, record it in section 3, then re-pin (section 5).
 
 ## 5. How to re-pin Node
 
-1. `NODE_PIN` in `scripts/ensure-node.bat` — the only place the version string
-   lives; the download URL, folder name and temp path all derive from it.
+1. `NODE_PIN` in `scripts/ensure-node.bat` — the download URL, folder name and
+   temp path all derive from it — **and `NODE_ZIP_SHA256` right below it**, copied
+   from `https://nodejs.org/dist/v<PIN>/SHASUMS256.txt` (the
+   `node-v<PIN>-win-x64.zip` line). A stale hash makes every fresh setup refuse
+   the zip with a checksum error.
 2. `:__en_gate` in the same file, if the accepted majors change.
 3. `ACCEPTED_MAJORS` in `scripts/nodeGate.js` — keep it in step with
    `:__en_gate`.
@@ -333,8 +363,10 @@ Sept 22 2026** and is the worked example; steps 1–3 below need no browser at a
    fleet onboarding):
    - **`GET /api/storefront/checkouts/<cartId>` → `shouldExecuteSpamCheck`.** `true`
      means BigCommerce checkout spam protection is on. The payment step then waits on
-     a reCAPTCHA check that automation cannot pass (ADC: an image challenge), so the
-     store cannot be onboarded until that changes.
+     a reCAPTCHA check that automation cannot pass (ADC: an image challenge). Since
+     Oct 12 2026 that is true of **every** store — see "Spam protection" below. The
+     config can still be filled in and verified up to payment from public endpoints
+     (ADC's was, behind `checkout.spamProtection: true`); the first real run waits.
    - **Grep the `/checkout` source for theme-enforced requirements.** A field
      `form-fields` reports as `required:false` can still be made mandatory by the
      store's own script. BRH's `field_28` becomes required whenever a freight method
@@ -390,11 +422,39 @@ Sept 22 2026** and is the worked example; steps 1–3 below need no browser at a
    the per-attempt results as well as the final colour, because a popup that covers
    only sometimes can fail attempt 1 and pass attempt 2.
 
-Two stores need a judgement call first: **BRH** is `pdp.quoteOnly` with no Add to
-Cart anywhere, so it may have no checkout journey at all; **PDA** is Spanish, and
+All nine stores have been onboarded this way (BESTUS, BESTCA, then the other seven
+on Sept 30 2026; ADC's config filled Oct 12 2026). Two arming caveats remain: **BRH**
+ships freight only and its store credit does **not** cover the order, so it must not
+get `checkout.placeOrder` without funding the account first; **PDA** is Spanish, and
 `placeOrder.js` carries two English-only strings (the "Payment is not required"
 overlay text and `ORDER_NUMBER_RE`) that would need making configurable before it
 could be armed.
+
+### Spam protection: why every checkout test is skipped, and how to re-enable one
+
+After a bot attack, BigCommerce checkout spam protection was switched on across the
+fleet on **Oct 12 2026**. With it on, the payment step waits on a reCAPTCHA check an
+automated browser cannot pass (it spins on "Loading" forever, or shows an image
+challenge), so every store's `checkout` section carries `spamProtection: true` and
+`checkout.cy.js` skips all its tests with `[skipped: checkout spam protection
+(reCAPTCHA) is on …]`. Re-checked **Oct 15 2026**: still on for all eight stores
+whose checkout product can be carted without options (BESTUS's needs modifier
+options, so a guest cart cannot be made for it from the API).
+
+To check one store (no sign-in, nothing kept):
+
+1. `GET` the store's `checkout.product` PDP with a cookie jar, and read `product_id`
+   from the add-to-cart form.
+2. `POST /api/storefront/carts` with `{"lineItems":[{"productId":<id>,"quantity":1}]}`.
+   Send the `XSRF-TOKEN` cookie back as an `X-XSRF-TOKEN` header, or the storefront
+   answers **403 Forbidden**.
+3. `GET /api/storefront/checkouts/<cartId>` and read `shouldExecuteSpamCheck`.
+4. `DELETE /api/storefront/carts/<cartId>`.
+
+When it reads `false`, delete that store's `"spamProtection": true` line and run
+`checkout.cy.js` on that store once, by hand, reading the log (address-book count,
+`deleted N cart(s)`, `[order-guard]` lines) before trusting it in a fleet run. ADC's
+first run is still an onboarding run: read its `_notes` first.
 
 ### 8b. The armed order test, and the manual cleanup it creates
 

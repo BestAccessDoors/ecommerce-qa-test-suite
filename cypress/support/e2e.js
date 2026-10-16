@@ -1,6 +1,6 @@
 import './commands';
 import 'cypress-real-events';
-import '@cypress-audit/lighthouse/commands';
+import './lighthouse';
 import { blockThirdParty, isToleratedAppError } from './checks';
 import { isLiveSubmit } from './utils/zohoIntercept.js';
 import {

@@ -143,7 +143,10 @@ export class CheckoutPage {
     cy.get(this.sel.emailInput, { timeout: 20000 })
       .should('be.visible')
       .clear({ force: this.force })
-      .type(email, { force: this.force });
+      // log:false for the same reason as the password below, with a lower stake: the email is
+      // half of the credential pair (see MAINTENANCE.md §8), and the command log is recorded into
+      // the run video that the dashboard serves.
+      .type(email, { force: this.force, log: false });
     cy.get(this.sel.passwordInput)
       .should('be.visible')
       // Assert it really is a password field before typing. If the theme ever ships this as
@@ -207,7 +210,11 @@ export class CheckoutPage {
 
   assertSignedIn(email) {
     // On success the customer step collapses to a static summary showing the signed-in address.
-    cy.get(this.sel.customerStep, { timeout: 30000 }).should('contain.text', email);
+    // A callback rather than should('contain.text', email), whose message would print the
+    // account email into the command log, the run video and the failure screenshot.
+    cy.get(this.sel.customerStep, { timeout: 30000 }).should(($step) => {
+      expect($step.text().includes(email), 'customer step shows the signed-in QA account').to.equal(true);
+    });
     return this;
   }
 

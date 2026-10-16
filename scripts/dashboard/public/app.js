@@ -79,7 +79,8 @@
       cb.addEventListener('change', updateRunButton);
       label.appendChild(cb);
       const txt = el('span');
-      txt.innerHTML = `<strong>${s.code.toUpperCase()}</strong> <span class="muted">${s.name}</span>`;
+      // Built from nodes, not innerHTML: s.code is a stores/ filename and must never be parsed as markup.
+      txt.append(el('strong', null, s.code.toUpperCase()), ' ', el('span', 'muted', s.name));
       label.appendChild(txt);
       list.appendChild(label);
     }

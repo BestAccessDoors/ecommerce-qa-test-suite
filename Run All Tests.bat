@@ -23,6 +23,21 @@ if errorlevel 1 (
   exit /b 1
 )
 
+REM --- Never let an inherited variable arm this run ---------------------
+REM  setlocal keeps these blanks inside this window (PATH from ensure-node
+REM  above is already set, and survives). cmd variable names are case-
+REM  insensitive, so this also clears e.g. a "setx place_order true".
+REM  Live leads and real orders are CLI-only; see README "Option 6 - Live Submission".
+setlocal
+set "LIVE_SUBMIT="
+set "I_KNOW_THIS_IS_LIVE="
+set "PLACE_ORDER="
+set "I_KNOW_THIS_PLACES_ORDERS="
+set "CYPRESS_LIVE_SUBMIT="
+set "CYPRESS_I_KNOW_THIS_IS_LIVE="
+set "CYPRESS_PLACE_ORDER="
+set "CYPRESS_I_KNOW_THIS_PLACES_ORDERS="
+
 REM --- Make sure setup was done first -------------------------------
 if not exist "node_modules" (
   echo.

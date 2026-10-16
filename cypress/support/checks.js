@@ -49,7 +49,7 @@ export const pickRandom = (list) => list[Math.floor(Math.random() * list.length)
 
 // Noisy third-party analytics / ad / visitor-tracking hosts (GA, GTM, Meta, Reddit, Spotify,
 // Taboola, leadsy, PageSense, Geotargetly, etc.). Derived by auditing every resource the live
-// site loads (see the throwaway cypress/e2e/_audit-hosts.cy.js). Store-functional vendors
+// site loads (done with a throwaway spec that was not kept). Store-functional vendors
 // (SearchSpring search API, Yotpo reviews, Zoho forms, PayPal, fonts, library CDNs) are
 // deliberately excluded. Regexes (not globs) so they match the request's subdomain host, e.g.
 // www.google-analytics.com or wvbknd.leadsy.ai — a glob matching the host as a path segment
@@ -122,8 +122,9 @@ export const THIRD_PARTY_HOSTS = [
     // also have to satisfy what that code asks the global.
     //
     // Deliberately applies in LIVE_SUBMIT mode too (blockThirdParty runs unconditionally): this
-    // sitekey is the storefront's own client-side gate, NOT Zoho's captcha, and Zoho's endpoint
-    // never verifies it — so a live submission lands the same real lead it always did.
+    // sitekey is the storefront's own client-side gate, NOT part of the Zoho form, so stubbing it
+    // changes nothing about what Zoho receives — a live submission lands the same real lead it
+    // always did.
     //
     // Also the one entry here matched on a PATH segment rather than a host, so it covers
     // www.google.com/recaptcha/api.js, the recaptcha.net mirror and gstatic's
@@ -173,9 +174,8 @@ export function blockThirdParty() {
 // Each entry matches by `stackPattern` (when the browser gives a real, attributable stack) or
 // `messagePattern` (for a browser-redacted error with no stack at all — same-origin scripts can
 // still lose their stack this way when loaded as a raw external <script src>, as BESTUS's
-// tracking_code.js once did). An entry may also carry an optional `store` field (e.g. 'brh')
-// which restricts it to that one store — used when a message is too generic to suppress fleet-wide
-// (e.g. a store-specific theme bug) without masking real errors elsewhere.
+// tracking_code.js once did). An entry that sets BOTH must match both — used when a message is
+// too generic to suppress on its own and only the stack pins it to the one known-buggy script.
 export const KNOWN_BUGGY_SCRIPTS = [
   {
     // Zoho SalesIQ chat widget UI bundle. Its `float~modern` chunk has an internal bug
@@ -292,6 +292,22 @@ export const KNOWN_BUGGY_SCRIPTS = [
     // a known internal bug of its own.
     stackPattern: /paypal\.com\/sdk\/js/,
   },
+  {
+    // BESTUS PDP template (found Oct 16 2026). A new inline script copies the Microsoft Ads click
+    // id into the page's Zoho form on DOMContentLoaded:
+    //     const field_m = document.querySelector('input[name="msclkid"]');
+    //     field_m.value = getCookie1("msclkid");
+    // PDPs carry no msclkid input (/contact-us/ does), so field_m is null and every PDP load
+    // throws. That killed every PDP-visiting suite in its `before all`. Real-user impact is nil:
+    // each DOMContentLoaded listener is isolated, so the gclid/UTM listener beside it still runs,
+    // and a PDP has no msclkid field to fill. Fix is site-side: `if (field_m)`, or add the hidden
+    // input to the PDP's Zoho form. The message is far too generic to match alone, so BOTH patterns
+    // must match: the stack frame must be an anonymous DOMContentLoaded listener inline in a
+    // bestaccessdoors.com page (URL ending `/:line:col`, not an external .js file). Remove once
+    // fixed. See stores/bestus.json _notes (Oct 16 2026).
+    messagePattern: /Cannot set properties of null \(setting 'value'\)/,
+    stackPattern: /^\s*at HTMLDocument\.<anonymous> \(https:\/\/www\.bestaccessdoors\.com\/[^)\s]*\/:\d+:\d+\)\s*$/m,
+  },
 ];
 
 /**
@@ -317,10 +333,11 @@ export function isToleratedAppError(err) {
     /an unknown error has occurred/i.test(message);
   const stack = err.stack || '';
   const isKnownThirdParty = THIRD_PARTY_HOSTS.some(({ pattern }) => pattern.test(stack));
-  const isKnownBuggyScript = KNOWN_BUGGY_SCRIPTS.some(
-    ({ stackPattern, messagePattern }) =>
-      (stackPattern && stackPattern.test(stack)) ||
-      (messagePattern && messagePattern.test(message))
+  const isKnownBuggyScript = KNOWN_BUGGY_SCRIPTS.some(({ stackPattern, messagePattern }) =>
+    stackPattern && messagePattern
+      ? stackPattern.test(stack) && messagePattern.test(message)
+      : (stackPattern && stackPattern.test(stack)) ||
+        (messagePattern && messagePattern.test(message))
   );
   return isRedactedCrossOrigin || isKnownThirdParty || isKnownBuggyScript;
 }

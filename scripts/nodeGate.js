@@ -11,10 +11,11 @@
  * only exists on Node >= 26, so its presence proved the run was on a version
  * the bootstrap deliberately rejects.
  *
- * This is a WARNING, never a failure: `cypress run` works fine on Node 26 —
- * it's `cypress install` that breaks (silently, exiting 0 while leaving no
- * browser behind). So blocking a run that would have succeeded would be worse
- * than the problem. We just make the situation visible.
+ * This is a WARNING, never a failure: `cypress run` was fine on Node 26 even
+ * when `cypress install` was not (Cypress 15.15.0's unzip stack exited 0 there
+ * while leaving no browser behind; 15.16+ replaced that stack, but Node 26 has
+ * not been re-verified since). Blocking a run that would have succeeded would be
+ * worse than the problem. We just make the situation visible.
  *
  * The accepted set below is a deliberate MIRROR of `:__en_gate` in
  * scripts/ensure-node.bat, which is the source of truth and carries the
@@ -22,9 +23,25 @@
  * MAINTENANCE.md for the verification procedure.
  */
 
-// Majors 24 and 22. Not 20 (EOL April 30 2026), not 26 (Cypress 15.15.0's
-// unzip stack dies on it — see :__en_gate).
+// Majors 24 and 22. Not 20 (EOL April 30 2026), not 26 (not yet verified — it
+// was broken under Cypress 15.15.0; see :__en_gate and MAINTENANCE.md §2).
 const ACCEPTED_MAJORS = [24, 22];
+
+const fs = require('fs');
+const path = require('path');
+
+// The portable Node the launchers installed, if any — named from what is actually on disk, so
+// the hint never points at a folder that a NODE_PIN bump has since replaced.
+function portableNodeHint() {
+  try {
+    const tools = path.join(__dirname, '..', 'tools');
+    const dir = fs.readdirSync(tools).find((d) => /^node-v\d+\.\d+\.\d+-win-x64$/.test(d));
+    if (dir) return path.join('tools', dir, 'node.exe') + ' ' + path.join('scripts', 'run-all.js');
+  } catch {
+    /* no tools folder: First Time Setup has not installed a portable Node */
+  }
+  return null;
+}
 
 function isAcceptedNodeVersion(version) {
   const [major, minor] = String(version).split('.');
@@ -52,17 +69,18 @@ function warnIfUnsupportedNode(version = process.versions.node) {
     `  └${pad}┘`,
     `  Running on Node v${version}. These tests are verified on Node 24 and 22.`,
     '',
-    '  The run will continue — `cypress run` is usually fine. The real',
-    '  casualty is `cypress install`, which on Node 26 exits 0 while leaving',
-    '  no browser behind (a DEP0205 module.register() warning in the output',
-    '  means you are on Node 26 or newer).',
+    '  The run will continue — `cypress run` is usually fine. The riskier',
+    '  step is `cypress install`, which has silently failed on an unverified',
+    '  Node before (a DEP0205 module.register() warning in the output means',
+    '  you are on Node 26 or newer).',
     '',
     '  To run on the pinned version instead, use one of the launchers',
     '  ("Run All Tests.bat" / "Run One Store.bat"), which put the right Node',
-    '  on PATH for you — or call it directly:',
-    '      tools\\node-v24.19.0-win-x64\\node.exe scripts\\run-all.js',
-    '',
+    '  on PATH for you.',
   ];
+  const hint = portableNodeHint();
+  if (hint) lines.push('  Or call the portable copy directly:', `      ${hint}`);
+  lines.push('');
   console.error(lines.join('\n'));
   return false;
 }

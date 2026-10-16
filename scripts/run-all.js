@@ -113,7 +113,8 @@ const testSeconds = results.reduce((sum, r) => {
 const testTime = `${Math.floor(testSeconds / 60)}m ${Math.round(testSeconds % 60)}s`;
 
 // Build the aggregate summary twice: plain[] for the log file, colored[] for
-// the console. Per-store lines are tinted by storeColor() (green/yellow/red).
+// the console. Per-store lines are tinted by storeColor() (green = no failures, white = 80%+
+// passed, orange = 60%+, red below that — the same tiers as the dashboard cards).
 const plain = [];
 const colored = [];
 function push(line, color) {

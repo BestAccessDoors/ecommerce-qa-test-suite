@@ -15,10 +15,9 @@
     "dashboard": "node scripts/dashboard/server.js"
   },
   "devDependencies": {
-    "@cypress-audit/lighthouse": "^1.4.2",
     "cross-env": "^7.0.3",
-    "cypress": "^15.14.2",
-    "lighthouse": "^10.4.0"
+    "cypress": "15.21.1",
+    "lighthouse": "^13.5.0"
   },
   "dependencies": {
     "cypress-real-events": "^1.15.0"

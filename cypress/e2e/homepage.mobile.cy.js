@@ -105,17 +105,14 @@ ALL_DEVICES.forEach(({ name, width, height, touchTarget }) => {
       cy.get(MOBILE_NAV).should('exist');
     });
 
-    // BESTCA's mobile header renders its logo/icons via a lazy-loaded image + icon fonts and
-    // opens a Klaviyo popup that locks the body — under Electron this leaves zero header
-    // interactive elements measurable as :visible (the 53px logo renders fine in real browsers).
-    // branding.skipMobileTouchTarget skips it in Electron only; Chrome/Firefox still run it.
     // branding.skipTouchTarget skips it in every browser: a known header touch-target
     // deficiency the store's dev team has reviewed and chosen to keep as-is (AAP, FSE).
-    itIfStore(!(branding.skipTouchTarget || (branding.skipMobileTouchTarget && Cypress.browser.name === 'electron')), `interactive header elements meet minimum touch target height (${touchTarget}px)`, () => {
+    // (An Electron-only branding.skipMobileTouchTarget existed for BESTCA, whose header was
+    // unmeasurable under Electron's :visible. assertMaxTouchTarget measures layout instead since
+    // Oct 14 2026, and BESTCA passed in Electron without the flag on Oct 15 2026, so it is gone.)
+    itIfStore(!branding.skipTouchTarget, `interactive header elements meet minimum touch target height (${touchTarget}px)`, () => {
       assertMaxTouchTarget(touchTarget);
-    }, branding.skipTouchTarget
-      ? "known header touch-target deficiency, kept as-is per store dev team (branding.skipTouchTarget)"
-      : "header touch targets unmeasurable under Electron (skipMobileTouchTarget); runs in Chrome/Firefox");
+    }, "known header touch-target deficiency, kept as-is per store dev team (branding.skipTouchTarget)");
   });
 });
 

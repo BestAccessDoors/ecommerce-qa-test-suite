@@ -314,8 +314,8 @@ const CHECKOUT_SELECTOR_DEFAULTS = {
 
   // Shipping method. The radio's name differs between single-consignment and multi-shipping
   // (shippingOptionIds vs shippingOptionIds.<consignmentId>), hence the ^= plus two
-  // container-scoped fallbacks. Not yet observed live — options only render once the address
-  // validates and a carrier quote returns.
+  // container-scoped fallbacks. Options only render once the address validates and a carrier
+  // quote returns (observed live on every store's green checkout run, Sept–Oct 2026).
   shippingOptionRadio:
     'input[type="radio"][name^="shippingOptionIds"], .shippingOptionsList input[type="radio"], ' +
     '.shippingOptions-container input[type="radio"]',
