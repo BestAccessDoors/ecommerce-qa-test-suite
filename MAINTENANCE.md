@@ -167,9 +167,11 @@ If it passes, record it in section 3, then re-pin (section 5).
 2. `:__en_gate` in the same file, if the accepted majors change.
 3. `ACCEPTED_MAJORS` in `scripts/nodeGate.js` — keep it in step with
    `:__en_gate`.
-4. Update the comment block above `:__en_gate` and section 3 here with the
+4. Both `node-version:` lines in `.github/workflows/scheduled-tests.yml` (the
+   `test` and `notify` jobs), so the scheduled cloud run uses the same Node.
+5. Update the comment block above `:__en_gate` and section 3 here with the
    evidence and date.
-5. Re-run the regression checks in section 6.
+6. Re-run the regression checks in section 6.
 
 **Existing installations migrate themselves.** After a re-pin, machines that
 already have the *old* portable Node keep working: `:__en_probe_portable` falls

@@ -7,8 +7,9 @@
  * (one process per store) therefore each append their own block automatically.
  *
  * History is preserved — every run appends; the latest run is the last block.
- * The log is local-only (results/ is gitignored): proof for the operator, not
- * a CI artifact. Any failure here is swallowed so logging never breaks a run.
+ * The log is gitignored: proof for the operator. The scheduled cloud run
+ * (.github/workflows/scheduled-tests.yml) also uploads results/ as a run
+ * artifact. Any failure here is swallowed so logging never breaks a run.
  */
 const fs = require('fs');
 const path = require('path');

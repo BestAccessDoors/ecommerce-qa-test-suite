@@ -1,0 +1,140 @@
+# Scheduled cloud run of the full suite: EVERY store, four times a day, on GitHub-hosted runners.
+# See "Scheduled cloud runs" in CLAUDE.md. Things that are easy to break here:
+#
+# - This repo is PUBLIC. Run logs, artifacts (screenshots, videos) and the status issue are readable
+#   by anyone. Never map checkout credentials (CHECKOUT_EMAIL_* / CHECKOUT_PASSWORD_*) into this
+#   workflow: a signed-in checkout video would publish the QA account's email and saved addresses.
+# - Never set LIVE_SUBMIT / I_KNOW_THIS_IS_LIVE / PLACE_ORDER / I_KNOW_THIS_PLACES_ORDERS. Left
+#   unset, every Zoho POST is stubbed and the order guard blocks every order endpoint.
+# - node-version mirrors NODE_PIN in scripts/ensure-node.bat. Change them together (MAINTENANCE.md).
+# - ADAP is in the matrix on purpose even though Cloudflare blocks GitHub's runners today: the day
+#   that changes, it is tested here with no edit. scripts/ciReport.js labels the block.
+name: Scheduled store tests
+
+on:
+  schedule:
+    - cron: '20 0,6,12,18 * * *' # every 6 hours; :20 dodges GitHub's top-of-the-hour backlog
+      timezone: 'America/Toronto'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Queue rather than overlap; this also serialises the status-issue update in the notify job.
+concurrency:
+  group: scheduled-tests
+  cancel-in-progress: false
+
+jobs:
+  stores:
+    name: List stores
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Same rule as availableStores() in scripts/run-all.js, so a newly onboarded store joins
+      # automatically. An empty list fails here rather than producing a run that tests nothing.
+      - id: list
+        run: |
+          node -e '
+            const fs = require("fs");
+            const stores = fs.readdirSync("stores").filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -5)).sort();
+            if (!stores.length) { console.error("No stores found in stores/"); process.exit(1); }
+            console.log("Testing " + stores.length + " store(s): " + stores.join(", "));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, "list=" + JSON.stringify(stores) + "\n");
+          '
+
+  test:
+    name: test (${{ matrix.store }})
+    needs: stores
+    # Windows, like the QA machine the suite was calibrated on: Lighthouse floors, touch-target
+    # pixel heights, font-dependent overflow, and the Windows-Chrome user agent cypress.config.js
+    # spoofs. Free on a public repo; ubuntu-latest would also work.
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        store: ${{ fromJSON(needs.stores.outputs.list) }}
+    env:
+      TZ: America/Toronto
+      STORE_CODE: ${{ matrix.store }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Cache the Cypress binary
+        uses: actions/cache@v6
+        with:
+          path: ~\AppData\Local\Cypress\Cache
+          key: cypress-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      # npm 11 does not run Cypress's postinstall, so fetch and check the binary explicitly, as
+      # "First Time Setup.bat" does.
+      - name: Install Cypress
+        run: node node_modules/cypress/bin/cypress install
+      - name: Verify Cypress
+        run: node node_modules/cypress/bin/cypress verify
+      - name: Run tests
+        run: node scripts/run-store.js $env:STORE_CODE
+      - name: Report
+        if: always()
+        run: node scripts/ciReport.js $env:STORE_CODE
+      - name: Upload results and screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: store-${{ matrix.store }}
+          # results/.run-summary/ is a hidden folder, and the notify job needs it.
+          include-hidden-files: true
+          path: |
+            results/
+            cypress/screenshots/${{ matrix.store }}/
+          retention-days: 14
+      - name: Upload videos
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: videos-${{ matrix.store }}
+          path: cypress/videos/${{ matrix.store }}/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  notify:
+    name: Update status issue
+    needs: test
+    # Not on a cancelled run (it would report every store as "no results"), and only from main, so
+    # a manual run on another branch never rewrites the shared state.
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.19.0
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: store-*
+          path: artifacts
+      - name: Update the status issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Optional repo variable (Settings > Secrets and variables > Actions > Variables), e.g.
+          # "@someone @another", added to each change comment.
+          NOTIFY_MENTIONS: ${{ vars.NOTIFY_MENTIONS }}
+        run: node scripts/ciNotify.js artifacts
