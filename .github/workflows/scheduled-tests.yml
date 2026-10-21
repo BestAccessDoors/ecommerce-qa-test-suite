@@ -13,8 +13,12 @@ name: Scheduled store tests
 
 on:
   schedule:
-    - cron: '20 0,6,12,18 * * *' # every 6 hours; :20 dodges GitHub's top-of-the-hour backlog
-      timezone: 'America/Toronto'
+    # Every 6 hours, in UTC: 00:20 / 06:20 / 12:20 / 18:20 Toronto during daylight time (EDT),
+    # an hour earlier in winter (EST). Deliberately no `timezone:` key: on the first night
+    # (Oct 20-21 2026) the only run that fired matched the UTC reading of the cron rather than
+    # America/Toronto, so the key was dropped rather than guessed at. :20 dodges GitHub's
+    # top-of-the-hour backlog; GitHub still delays some scheduled runs by hours and drops others.
+    - cron: '20 4,10,16,22 * * *'
   workflow_dispatch:
 
 permissions:
