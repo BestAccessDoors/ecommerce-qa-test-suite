@@ -170,8 +170,16 @@ async function main() {
   }
 
   writeVerdict(store, null);
+  // Tests that failed, then passed when scripts/ciRerun.js re-ran their spec file. Shown so a
+  // flaky cloud connection stays visible, but they are not failures and never reach the issue.
+  const recovered = (s.rerun && s.rerun.recovered) || [];
+  const rerunNote = recovered.length
+    ? `\n↻ **Passed on re-run (${recovered.length})**, after failing the first attempt (usually a ` +
+      'cloud connection reset, see CLAUDE.md):\n\n' +
+      recovered.map((k) => `- ${shortSpec(k).replace(/</g, '&lt;')}`).join('\n') + '\n'
+    : '';
   if (totalFailed === 0) {
-    writeSummary(`### ✔ ${CODE}: ${head}\n`);
+    writeSummary(`### ✔ ${CODE}: ${head}\n${rerunNote}`);
     return;
   }
 
@@ -184,7 +192,7 @@ async function main() {
       names.push(`${shortSpec(spec.spec)} › ${t}`);
     }
   }
-  writeSummary(lines.join('\n') + '\n');
+  writeSummary(lines.join('\n') + '\n' + rerunNote);
   annotate(`${CODE}: ${totalFailed} test(s) failed`, names.join('\n'));
 }
 

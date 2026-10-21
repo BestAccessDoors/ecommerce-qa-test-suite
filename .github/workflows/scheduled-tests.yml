@@ -67,6 +67,10 @@ jobs:
     env:
       TZ: America/Toronto
       STORE_CODE: ${{ matrix.store }}
+      # Cypress allows itself 5 s to shut down, and on these slower machines that ran out after
+      # every test had passed: PDA's job went red with 0 failures on Oct 20 2026 ("Failed to
+      # gracefully exit after 5000ms. Exiting with code 1"). The variable is named in that message.
+      CYPRESS_INTERNAL_TEARDOWN_TIMEOUT: '30000'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -88,8 +92,17 @@ jobs:
         run: node node_modules/cypress/bin/cypress install
       - name: Verify Cypress
         run: node node_modules/cypress/bin/cypress verify
+      # The first attempt may fail without failing the job: on these runners Chrome intermittently
+      # resets its connections to Cypress's proxy (see scripts/ciRerun.js), so the failed spec
+      # files get one fresh attempt, and THAT step's result is the job's colour. A failure that
+      # repeats still turns the job red and reaches the status issue.
       - name: Run tests
+        id: run
+        continue-on-error: true
         run: node scripts/run-store.js $env:STORE_CODE
+      - name: Re-run failed specs once
+        if: steps.run.outcome == 'failure'
+        run: node scripts/ciRerun.js $env:STORE_CODE
       - name: Report
         if: always()
         run: node scripts/ciReport.js $env:STORE_CODE
