@@ -196,7 +196,11 @@ export const KNOWN_BUGGY_SCRIPTS = [
     // copied into any later Zoho form (e.g. the PDP product-info lead form). Fix is site-side:
     // `getAttribute('action')` instead of `.action`. Matched by STACK — the error now carries
     // real frames in this one file. See stores/bestus.json _notes (Oct 12 2026).
-    stackPattern: /bestaccessdoors\.com\/content\/assets\/js\/tracking_code\.js/,
+    // By Oct 29 2026 PDPs load a renamed copy, tracking_code_product.js?v=123456, with the same
+    // bug (line 241); the old exact-name pattern stopped matching and failed every PDP suite.
+    // The `[\w-]*` admits both (the original still loads on /contact-us/ and /request-a-quote/)
+    // and any later tracking_code*.js variant in that folder.
+    stackPattern: /bestaccessdoors\.com\/content\/assets\/js\/tracking_code[\w-]*\.js/,
   },
   {
     // Meta Pixel (fbq) / Segment (analytics) / gtag / TikTok (ttq) globals are defined by
