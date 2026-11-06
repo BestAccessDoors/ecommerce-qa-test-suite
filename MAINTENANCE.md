@@ -523,7 +523,86 @@ out is recorded.
 - Never pass a credential to `cy.task('log', …)`: that reaches real stdout,
   `results/test-results.log`, and the dashboard's live log pane (which streams
   child stdout to a browser).
-- Never put a credential in a test title — titles are written to the run summary.
+- Never put a credential in a test title — titles are written to the run summary,
+  and the scheduled local run publishes failing test titles to the public `local-runs`
+  branch (§9).
 - `cypress open` renders resolved config including `env`, so one store's pair is
   visible there. Accepted and bounded: only the active store's pair is ever
   injected. `DEBUG=cypress:*` is similarly verbose — avoid it on a shared screen.
+
+---
+
+## 9. Scheduled local runs (the QA laptop → the dashboard)
+
+The QA laptop runs every store at **10:00 and 15:00 on weekdays** and publishes a
+small summary of each run. The weekday 6:41 a.m. Claude review ("Store QA daily
+review") then adds those runs to the **BEST QA Test Suite Runs** dashboard next to the
+GitHub Actions runs, labelled *Local*. The review is the only thing that writes to the
+dashboard, and it can only read public GitHub, which is why the laptop publishes to
+GitHub rather than to the dashboard.
+
+Local runs are worth having because the laptop is on ADAP's Cloudflare allowlist
+(cloud runs never are) and it never sees the GitHub-runner connection resets. A
+failure seen locally *and* in the cloud is real. One seen only in the cloud is
+usually runner noise.
+
+### The pieces
+
+| Piece | What it does |
+| ----- | ------------ |
+| `scripts\install-local-schedule.ps1` | Run once. Registers the Task Scheduler task **BEST QA local run**: weekdays 10:00 and 15:00, wakes the laptop, runs as soon as possible after a missed start, never twice at once, 2-hour limit. `-Uninstall` removes it; `-Times 09:30,14:00` changes the times. |
+| `Scheduled Local Run.bat` | What the task starts. Unattended (no pauses). Clears the live/order arming variables, then runs `node scripts\publishLocalRun.js --run`. Output: `results\scheduled-local.log`. |
+| `scripts/publishLocalRun.js` | Runs `run-all.js`, builds the summary from `results/.run-summary/*.json`, and uploads it to `local-runs/<UTC time>.json` on the **`local-runs` branch**. A failed upload never changes the exit code; the file waits in `results\local-runs\pending\` and is sent after the next run. `--dry-run` skips the upload. |
+
+**What is published.** The repo is public, so the summary is built from a fixed list of
+fields: store, PASS/FAIL/NO RESULTS, test counts, whether the site blocked the run,
+and the names of failing spec files and tests. Never error text, logs, screenshots,
+videos, the machine's name or IP, or anything from `credentials.json`. Add a field
+only by editing `storeEntry()` in `publishLocalRun.js`, never by copying the sidecar
+wholesale. `LOCAL_RUN_LABEL` changes the `machine` label (default `QA laptop`).
+
+### The GitHub token
+
+`publishLocalRun.js` needs a **fine-grained personal access token**:
+
+1. GitHub → Settings → Developer settings → Fine-grained tokens → Generate new token.
+2. Resource owner **BestAccessDoors**, repository access **Only select repositories →
+   ecommerce-qa-test-suite**.
+3. Repository permissions → **Contents: Read and write**. Nothing else.
+4. Expiry: the longest the organization allows (GitHub's maximum is one year). Put the
+   expiry date in the calendar.
+5. Save the token, and nothing else, in
+   `%LOCALAPPDATA%\BestAccessDoorsTests\github-token.txt` (the folder that may already
+   hold `credentials.json`). The env var `GITHUB_LOCAL_RUNS_TOKEN` overrides the file.
+
+If the organization requires approval for fine-grained tokens, an owner has to
+approve it before uploads work (until then GitHub answers 403/404).
+
+**Rotation / expiry.** An expired token makes every upload fail with
+`GitHub answered 401`, in `results\scheduled-local.log`. Runs carry on and pile up in
+`pending\`. The morning review alerts once no local run has arrived for 2 weekdays,
+which is usually how an expired token shows up. Replace the file's contents with a
+new token; the pending summaries go up after the next run, oldest first.
+
+### When local runs stop arriving
+
+Check in this order:
+
+1. **Laptop off, asleep with wake timers disabled, or signed out.** The task runs only
+   while you are signed in (locked is fine). Wake timers: Control Panel → Power
+   Options → Change plan settings → Advanced → Sleep → *Allow wake timers*: Enable.
+2. `results\scheduled-local.log`: a `NOT PUBLISHED` line names the cause (no token,
+   401 expired, 403 missing permission, 404 branch missing).
+3. Task Scheduler → *BEST QA local run* → History / Last Run Result.
+
+**ADAP failing locally** with "SITE BLOCKED" means the laptop was not on the
+allowlisted connection or its IP changed. See the ADAP bullet in `CLAUDE.md` for the
+`curl.exe … cdn-cgi/trace` fix.
+
+### The branch
+
+`local-runs` is an orphan branch holding only `local-runs/*.json` and a README. It is
+never merged. GitHub lists at most 1,000 files per folder through the API the review
+reads, so about two years in, move older files into a `local-runs/archive-<year>/`
+folder.
+
