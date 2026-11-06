@@ -575,14 +575,26 @@ wholesale. `LOCAL_RUN_LABEL` changes the `machine` label (default `QA laptop`).
    `%LOCALAPPDATA%\BestAccessDoorsTests\github-token.txt` (the folder that may already
    hold `credentials.json`). The env var `GITHUB_LOCAL_RUNS_TOKEN` overrides the file.
 
-If the organization requires approval for fine-grained tokens, an owner has to
-approve it before uploads work (until then GitHub answers 403/404).
+**BestAccessDoors requires an owner to approve fine-grained tokens** (found Nov 6
+2026). A new token shows **Pending** on github.com/settings/personal-access-tokens,
+and until an owner approves it under the organization's Settings → Personal access
+tokens → Pending requests, every upload fails with
+`403 Resource not accessible by personal access token`. That is the same answer a
+token with the wrong permission gets, so check for Pending first. Runs carry on
+meanwhile, and their summaries upload once the token is approved.
 
 **Rotation / expiry.** An expired token makes every upload fail with
 `GitHub answered 401`, in `results\scheduled-local.log`. Runs carry on and pile up in
 `pending\`. The morning review alerts once no local run has arrived for 2 weekdays,
 which is usually how an expired token shows up. Replace the file's contents with a
 new token; the pending summaries go up after the next run, oldest first.
+
+To send waiting summaries straight away instead of after the next run, run this
+from the tests folder. It uploads only, without running any tests:
+
+```powershell
+& (Get-ChildItem tools\node-v*-win-x64\node.exe | Select-Object -First 1).FullName scripts\publishLocalRun.js
+```
 
 ### When local runs stop arriving
 
@@ -592,7 +604,9 @@ Check in this order:
    while you are signed in (locked is fine). Wake timers: Control Panel → Power
    Options → Change plan settings → Advanced → Sleep → *Allow wake timers*: Enable.
 2. `results\scheduled-local.log`: a `NOT PUBLISHED` line names the cause (no token,
-   401 expired, 403 missing permission, 404 branch missing).
+   401 expired, 403 token still Pending approval or missing permission, 404 branch
+   missing). Read it with `Get-Content results\scheduled-local.log -Tail 15 -Encoding UTF8`:
+   without `-Encoding UTF8`, Windows PowerShell shows the summary's box lines as `â•â•`.
 3. Task Scheduler → *BEST QA local run* → History / Last Run Result.
 
 **ADAP failing locally** with "SITE BLOCKED" means the laptop was not on the

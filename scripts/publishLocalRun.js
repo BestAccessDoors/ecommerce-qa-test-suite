@@ -167,7 +167,10 @@ async function upload(file, token) {
     try { detail = (await res.json()).message || ''; } catch { /* not JSON */ }
     const hint = {
       401: 'the token is wrong or has expired: create a new one (MAINTENANCE.md, "Scheduled local runs").',
-      403: 'the token lacks Contents: read and write on this repo.',
+      // Seen first on the QA laptop (Nov 6 2026): a token awaiting org-owner approval answers
+      // exactly like one with the wrong permission, so name the likelier cause first.
+      403: 'the token is probably still "Pending" approval by a BestAccessDoors organization owner ' +
+        '(see github.com/settings/personal-access-tokens); otherwise it lacks Contents: read and write on this repo.',
       404: `the "${BRANCH}" branch is missing, or the token cannot see this repo.`,
     }[res.status] || '';
     throw new Error(`GitHub answered ${res.status} ${detail} ${hint}`.trim());

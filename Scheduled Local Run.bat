@@ -13,6 +13,9 @@ if errorlevel 1 exit /b 1
 
 if not exist "results" mkdir "results"
 set "SL_LOG=%~dp0results\scheduled-local.log"
+REM  The only lines that go to the screen (when run by hand; Task Scheduler shows none).
+echo  Running the scheduled local test run. Nothing more appears here until it ends.
+echo  Progress goes to results\scheduled-local.log (all stores take about 80 minutes).
 echo.>> "%SL_LOG%"
 echo ==== Scheduled local run started %DATE% %TIME% ====>> "%SL_LOG%"
 
@@ -44,6 +47,7 @@ set "CYPRESS_I_KNOW_THIS_PLACES_ORDERS="
 node scripts\publishLocalRun.js --run %* >> "%SL_LOG%" 2>&1
 set "SL_EXIT=%ERRORLEVEL%"
 echo ==== Scheduled local run finished %DATE% %TIME% (exit %SL_EXIT%) ====>> "%SL_LOG%"
+echo  Finished. Look for a "published" or "NOT PUBLISHED" line near the end of results\scheduled-local.log.
 
 endlocal & set "SL_EXIT=%SL_EXIT%"
 popd
