@@ -150,8 +150,9 @@ Three more Windows launchers work if you'd rather watch a plain black window (fo
 | **`First Time Setup.bat`** | Run **once**. Installs Node.js if needed, then everything else the tests need. |
 | **`Run All Tests.bat`** | Tests **every store** in Chrome, then shows a PASS/FAIL summary. |
 | **`Run One Store.bat`** | Shows a numbered menu — pick one store to test in Chrome. |
+| **`Scheduled Local Run.bat`** | Not for double-clicking: Task Scheduler runs it at 10:00 and 15:00 on weekdays once `scripts\install-local-schedule.ps1` has been run. Tests every store and publishes a summary for the QA dashboard. See `MAINTENANCE.md` §9. |
 
-The two run launchers check that setup ran (and run it for you if not), keep their window open at the end so you can read the results, and points you to `results\test-results.log`. All four call `scripts\ensure-node.bat` first, so Node.js is installed or corrected automatically — you only need **Google Chrome** installed yourself.
+The two run launchers check that setup ran (and run it for you if not), keep their window open at the end so you can read the results, and points you to `results\test-results.log`. All of them call `scripts\ensure-node.bat` first, so Node.js is installed or corrected automatically — you only need **Google Chrome** installed yourself.
 
 The `npm` commands below do the exact same things and are for anyone who prefers a terminal.
 
